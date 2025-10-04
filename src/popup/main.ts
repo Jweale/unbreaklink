@@ -472,6 +472,7 @@ const loadSiteState = async () => {
     }
     state.hasPermission = await permissionsContains(state.originPattern);
     await loadSiteRule();
+    await syncSiteRuleWithPermission();
     renderSite();
   } catch (error) {
     siteLine.textContent = 'Unable to load current tab information.';
@@ -496,22 +497,20 @@ const enableSite = async () => {
   }
   siteOperationInProgress = true;
 
-  if (!state.originPattern) {
-    await loadState();
-    siteOperationInProgress = false;
-    return false;
-  }
-
-  if (!state.hasPermission) {
-    const granted = await permissionsRequest(state.originPattern);
-    state.hasPermission = granted;
-    if (!granted) {
-      siteOperationInProgress = false;
+  try {
+    if (!state.originPattern) {
+      await loadState();
       return false;
     }
-  }
 
-  try {
+    if (!state.hasPermission) {
+      const granted = await permissionsRequest(state.originPattern);
+      state.hasPermission = granted;
+      if (!granted) {
+        return false;
+      }
+    }
+
     if (state.sanitizedOrigin) {
       const response = await sendMessage<
         { type: string; payload: { origin: string; enabled: boolean } },
@@ -538,18 +537,17 @@ const disableSite = async () => {
   }
   siteOperationInProgress = true;
 
-  if (!state.originPattern) {
-    await loadState();
-    siteOperationInProgress = false;
-    return false;
-  }
-
-  const removed = await permissionsRemove(state.originPattern);
-  if (removed) {
-    state.hasPermission = false;
-  }
-
   try {
+    if (!state.originPattern) {
+      await loadState();
+      return false;
+    }
+
+    const removed = await permissionsRemove(state.originPattern);
+    if (removed) {
+      state.hasPermission = false;
+    }
+
     if (state.sanitizedOrigin) {
       const response = await sendMessage<
         { type: string; payload: { origin: string; enabled: boolean } },
@@ -567,6 +565,30 @@ const disableSite = async () => {
     return true;
   } finally {
     siteOperationInProgress = false;
+  }
+};
+
+const syncSiteRuleWithPermission = async () => {
+  if (!state.sanitizedOrigin) {
+    return;
+  }
+
+  if (state.hasPermission === state.siteRuleEnabled) {
+    return;
+  }
+
+  try {
+    const response = await sendMessage<
+      { type: string; payload: { origin: string; enabled: boolean } },
+      { origin: string; enabled: boolean }
+    >({
+      type: MESSAGE_TYPES.setSiteRule,
+      payload: { origin: state.sanitizedOrigin, enabled: state.hasPermission }
+    });
+    state.sanitizedOrigin = response.origin ?? state.sanitizedOrigin;
+    state.siteRuleEnabled = Boolean(response.enabled);
+  } catch (error) {
+    console.warn('Failed to synchronize site rule state', error);
   }
 };
 
@@ -600,24 +622,35 @@ siteToggleButton.addEventListener('click', async () => {
     return;
   }
 
-  siteToggleButton.disabled = true;
-  siteStatusLine.textContent = state.hasPermission && state.siteRuleEnabled ? 'Disabling…' : 'Enabling…';
-
-  try {
-    if (state.hasPermission && state.siteRuleEnabled) {
-      await disableSite();
-    } else {
-      const enabled = await enableSite();
-      if (!enabled && !state.hasPermission) {
-        siteStatusLine.textContent = 'Permission was not granted.';
-      }
-    }
-  } catch (error) {
-    siteStatusLine.textContent = (error as Error).message;
+  if (siteOperationInProgress) {
+    return;
   }
 
-  siteToggleButton.disabled = false;
+  siteToggleButton.disabled = true;
+  const disabling = state.hasPermission && state.siteRuleEnabled;
+  siteStatusLine.textContent = disabling ? 'Disabling…' : 'Enabling…';
+
+  let operationSuccessful = false;
+
+  try {
+    if (disabling) {
+      operationSuccessful = await disableSite();
+    } else {
+      operationSuccessful = await enableSite();
+    }
+  } catch (error) {
+    siteToggleButton.disabled = false;
+    renderSite();
+    siteStatusLine.textContent = (error as Error).message;
+    return;
+  }
+
   renderSite();
+  if (!disabling && !operationSuccessful && !state.hasPermission) {
+    siteStatusLine.textContent = 'Permission request was denied.';
+    permissionText.textContent = 'Chrome blocked the request. Try again to grant host permissions.';
+    permissionCallout.hidden = false;
+  }
 });
 
 permissionButton.addEventListener('click', async () => {
@@ -631,22 +664,33 @@ permissionButton.addEventListener('click', async () => {
     return;
   }
 
+  if (siteOperationInProgress) {
+    return;
+  }
+
   permissionButton.disabled = true;
   permissionButton.textContent = 'Requesting…';
   siteStatusLine.textContent = 'Requesting permission…';
 
+  let enabled = false;
   try {
-    const enabled = await enableSite();
-    if (!enabled && !state.hasPermission) {
-      siteStatusLine.textContent = 'Permission was not granted.';
-    }
+    enabled = await enableSite();
   } catch (error) {
+    permissionButton.textContent = 'Allow this site';
+    permissionButton.disabled = false;
+    renderSite();
     siteStatusLine.textContent = (error as Error).message;
+    return;
   }
 
   permissionButton.textContent = 'Allow this site';
   permissionButton.disabled = false;
   renderSite();
+  if (!enabled && !state.hasPermission) {
+    siteStatusLine.textContent = 'Permission request was denied.';
+    permissionText.textContent = 'Chrome blocked the request. Try again to grant host permissions.';
+    permissionCallout.hidden = false;
+  }
 });
 
 openOptionsButton.addEventListener('click', () => {
