@@ -60,9 +60,9 @@
 - [x] Persist mappings and push updates to content script via messaging.
 
 ### Task 4.3: Content script action dispatcher
-- [ ] Consume user-defined mappings when interpreting click events.
-- [ ] Provide fallback defaults when mappings are incomplete.
-- [ ] Add telemetry hooks for misconfiguration warnings (future use).
+- [x] Consume user-defined mappings when interpreting click events.
+- [x] Provide fallback defaults when mappings are incomplete.
+- [x] Add telemetry hooks for misconfiguration warnings (future use).
 
 ## 5. Destination Preview Tooltip (v1.0 milestone)
 

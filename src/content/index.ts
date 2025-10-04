@@ -4,12 +4,13 @@ import {
   getModifierState,
   isValidClickTarget,
   shouldBypassInterception,
-  resolveAction,
   DEFAULT_MODIFIER_MAP,
   normalizeModifierMap,
+  formatModifierKey,
   type ModifierMap,
   type ModifierState
 } from '../shared/modifier';
+import { reportModifierFallback } from '../shared/telemetry';
 
 const deriveTargetElement = (event: MouseEvent): Element | null => {
   const target = event.target as Element | null;
@@ -71,6 +72,7 @@ let siteEnabled = false;
 let trackedOrigin = window.location.origin;
 let modifierMap: ModifierMap = { ...DEFAULT_MODIFIER_MAP };
 
+
 const determineAction = (state: ModifierState): ClickAction => {
   if (state.button === 1) {
     return ClickAction.BackgroundTab;
@@ -80,7 +82,20 @@ const determineAction = (state: ModifierState): ClickAction => {
     return ClickAction.NewWindow;
   }
 
-  return resolveAction(state, modifierMap, ClickAction.None);
+  const combination = formatModifierKey(state);
+
+  if (combination in modifierMap) {
+    return modifierMap[combination];
+  }
+
+  if (combination in DEFAULT_MODIFIER_MAP) {
+    const fallbackAction = DEFAULT_MODIFIER_MAP[combination];
+    reportModifierFallback({ combination, resolvedAction: fallbackAction, reason: 'missing' });
+    return fallbackAction;
+  }
+
+  reportModifierFallback({ combination, resolvedAction: ClickAction.None, reason: 'unassigned' });
+  return ClickAction.None;
 };
 
 const interceptEvent = async (event: MouseEvent) => {
