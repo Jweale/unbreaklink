@@ -51,18 +51,18 @@
 ## 4. Custom Modifier Mapping (Beta milestone)
 
 ### Task 4.1: Options page architecture
-- [ ] Build options page (React/Vue/vanilla) skeleton with routing for modifier settings and global preferences.
-- [ ] Load and observe storage changes to keep UI and background in sync.
+- [x] Build options page (React/Vue/vanilla) skeleton with routing for modifier settings and global preferences.
+- [x] Load and observe storage changes to keep UI and background in sync.
 
 ### Task 4.2: Modifier mapping editor
-- [ ] Render editable mapping table for modifier combinations and actions.
-- [ ] Validate combinations to prevent duplicates/conflicts.
-- [ ] Persist mappings and push updates to content script via messaging.
+- [x] Render editable mapping table for modifier combinations and actions.
+- [x] Validate combinations to prevent duplicates/conflicts.
+- [x] Persist mappings and push updates to content script via messaging.
 
 ### Task 4.3: Content script action dispatcher
-- [ ] Consume user-defined mappings when interpreting click events.
-- [ ] Provide fallback defaults when mappings are incomplete.
-- [ ] Add telemetry hooks for misconfiguration warnings (future use).
+- [x] Consume user-defined mappings when interpreting click events.
+- [x] Provide fallback defaults when mappings are incomplete.
+- [x] Add telemetry hooks for misconfiguration warnings (future use).
 
 ## 5. Destination Preview Tooltip (v1.0 milestone)
 

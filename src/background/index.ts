@@ -1,6 +1,7 @@
 import { createSiteRuleManager } from './siteRules';
 import { ClickAction, MESSAGE_TYPES, STORAGE_KEYS } from '../shared/constants';
 import { registerMessageHandler } from '../shared/messaging';
+import { normalizeModifierMap } from '../shared/modifier';
 
 type ServiceState = {
   startups: number;
@@ -113,6 +114,23 @@ const bootstrap = async () => {
       return siteRuleManager.setRule(payload.origin, Boolean(payload.enabled));
     }
   );
+  registerMessageHandler(MESSAGE_TYPES.updateModifierMap, async (payload) => {
+    const normalized = normalizeModifierMap(payload);
+    await chrome.storage.sync.set({ [STORAGE_KEYS.modifierMap]: normalized });
+    chrome.runtime.sendMessage(
+      {
+        type: MESSAGE_TYPES.updateModifierMap,
+        payload: normalized
+      },
+      () => {
+        const error = chrome.runtime.lastError;
+        if (error && !(error.message ?? '').includes('Receiving end does not exist')) {
+          console.warn('UnbreakLink background failed to broadcast modifier mapping', error);
+        }
+      }
+    );
+    return { ok: true } as const;
+  });
 
   chrome.runtime.onSuspend.addListener(() => {
     console.info('UnbreakLink background service worker suspended', { ...state });
