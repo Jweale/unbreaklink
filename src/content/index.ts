@@ -84,6 +84,10 @@ const determineAction = (state: ModifierState): ClickAction => {
 };
 
 const interceptEvent = async (event: MouseEvent) => {
+  if (!globalEnabled) {
+    return;
+  }
+
   if (shouldBypassInterception(event)) {
     return;
   }
@@ -123,10 +127,45 @@ const listenerOptions: AddEventListenerOptions = {
   passive: false
 };
 
-const events: Array<keyof WindowEventMap> = ['click', 'auxclick'];
+let globalEnabled = false;
 
+const eventHandler = (event: Event) => {
+  void interceptEvent(event as MouseEvent);
+};
+
+const events: Array<keyof WindowEventMap> = ['click', 'auxclick'];
 for (const eventType of events) {
-  window.addEventListener(eventType, (event) => {
-    void interceptEvent(event as MouseEvent);
-  }, listenerOptions);
+  window.addEventListener(eventType, eventHandler, listenerOptions);
 }
+
+const initialize = async () => {
+  try {
+    const response = await sendMessage<{ type: string }, { enabled: boolean }>({
+      type: MESSAGE_TYPES.getGlobalEnabled
+    });
+    globalEnabled = response.enabled;
+  } catch (error) {
+    console.warn('UnbreakLink failed to obtain global enabled state', error);
+    globalEnabled = false;
+  }
+};
+
+const handleGlobalToggle = (message: unknown) => {
+  if (typeof message !== 'object' || message === null) {
+    return;
+  }
+  const typed = message as { type?: string; payload?: { enabled?: boolean } };
+  if (typed.type !== MESSAGE_TYPES.setGlobalEnabled) {
+    return;
+  }
+  const enabled = typed.payload?.enabled;
+  if (typeof enabled === 'boolean') {
+    globalEnabled = enabled;
+  }
+};
+
+chrome.runtime.onMessage.addListener((message) => {
+  handleGlobalToggle(message);
+});
+
+void initialize();

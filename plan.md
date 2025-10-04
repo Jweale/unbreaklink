@@ -27,9 +27,9 @@
 - [x] Log fix success metrics locally for future telemetry hook.
 
 ### Task 2.3: Global enable/disable controls
-- [ ] Add synced storage flag for global enable state (default OFF).
-- [ ] Provide safeguard to bypass interception when global state is disabled.
-- [ ] Wire popup toggle to update and persist global state.
+- [x] Add synced storage flag for global enable state (default OFF).
+- [x] Provide safeguard to bypass interception when global state is disabled.
+- [x] Wire popup toggle to update and persist global state.
 
 ## 3. Per-Site Control (Beta milestone)
 

@@ -19,5 +19,7 @@ export const MESSAGE_TYPES = {
   updateModifierMap: 'UPDATE_MODIFIER_MAP',
   toggleSite: 'TOGGLE_SITE',
   ping: 'PING',
-  executeClickAction: 'EXECUTE_CLICK_ACTION'
+  executeClickAction: 'EXECUTE_CLICK_ACTION',
+  getGlobalEnabled: 'GET_GLOBAL_ENABLED',
+  setGlobalEnabled: 'SET_GLOBAL_ENABLED'
 } as const;

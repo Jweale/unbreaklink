@@ -1,4 +1,4 @@
-import { ClickAction, MESSAGE_TYPES } from '../shared/constants';
+import { ClickAction, MESSAGE_TYPES, STORAGE_KEYS } from '../shared/constants';
 import { registerMessageHandler } from '../shared/messaging';
 
 type ServiceState = {
@@ -58,6 +58,33 @@ const handleClickAction = async (payload: {
   return { ok: true };
 };
 
+const getGlobalEnabled = async () => {
+  const stored = await chrome.storage.sync.get(STORAGE_KEYS.globalEnabled);
+  return { enabled: Boolean(stored[STORAGE_KEYS.globalEnabled]) };
+};
+
+const setGlobalEnabled = async (enabled: boolean) => {
+  const normalized = Boolean(enabled);
+  await chrome.storage.sync.set({ [STORAGE_KEYS.globalEnabled]: normalized });
+  chrome.runtime.sendMessage(
+    {
+      type: MESSAGE_TYPES.setGlobalEnabled,
+      payload: { enabled: normalized }
+    },
+    () => {
+      const error = chrome.runtime.lastError;
+      if (!error) {
+        return;
+      }
+      const message = error.message ?? '';
+      if (!message.includes('Receiving end does not exist')) {
+        console.warn('UnbreakLink background failed to broadcast global state', error);
+      }
+    }
+  );
+  return { enabled: normalized };
+};
+
 const bootstrap = async () => {
   await loadState();
   state.startups += 1;
@@ -65,6 +92,8 @@ const bootstrap = async () => {
 
   registerMessageHandler(MESSAGE_TYPES.ping, () => ({ ok: true }));
   registerMessageHandler(MESSAGE_TYPES.executeClickAction, handleClickAction);
+  registerMessageHandler(MESSAGE_TYPES.getGlobalEnabled, getGlobalEnabled);
+  registerMessageHandler(MESSAGE_TYPES.setGlobalEnabled, setGlobalEnabled);
 
   chrome.runtime.onSuspend.addListener(() => {
     console.info('UnbreakLink background service worker suspended', { ...state });
