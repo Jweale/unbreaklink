@@ -44,9 +44,9 @@
 - [x] Surface quick actions (open options, report issue) while maintaining minimal footprint.
 
 ### Task 3.3: Runtime permission flow
-- [ ] Request `host_permissions` dynamically when toggling a site ON.
-- [ ] Handle permission rejection gracefully and update UI state.
-- [ ] Store granted origins and sync with site rules for consistency.
+- [x] Request `host_permissions` dynamically when toggling a site ON.
+- [x] Handle permission rejection gracefully and update UI state.
+- [x] Store granted origins and sync with site rules for consistency.
 
 ## 4. Custom Modifier Mapping (Beta milestone)
 
