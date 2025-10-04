@@ -1,8 +1,15 @@
-import { MODIFIER_KEYS, type ClickAction } from './constants';
+import { MODIFIER_KEYS, ClickAction } from './constants';
 
 export type ModifierState = Record<(typeof MODIFIER_KEYS)[number], boolean> & { button: number };
 
 export type ModifierMap = Record<string, ClickAction>;
+
+export const DEFAULT_MODIFIER_MAP: ModifierMap = Object.freeze({
+  'CTRL+PRIMARY': ClickAction.BackgroundTab,
+  'META+PRIMARY': ClickAction.BackgroundTab,
+  'SHIFT+PRIMARY': ClickAction.NewWindow,
+  MIDDLE: ClickAction.BackgroundTab
+});
 
 export const getModifierState = (event: MouseEvent): ModifierState => ({
   alt: event.altKey,

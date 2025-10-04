@@ -5,16 +5,9 @@ import {
   isValidClickTarget,
   shouldBypassInterception,
   resolveAction,
-  type ModifierMap,
+  DEFAULT_MODIFIER_MAP,
   type ModifierState
 } from '../shared/modifier';
-
-const DEFAULT_MAPPING: ModifierMap = {
-  'CTRL+PRIMARY': ClickAction.BackgroundTab,
-  'META+PRIMARY': ClickAction.BackgroundTab,
-  'SHIFT+PRIMARY': ClickAction.NewWindow,
-  'MIDDLE': ClickAction.BackgroundTab
-};
 
 const deriveTargetElement = (event: MouseEvent): Element | null => {
   const target = event.target as Element | null;
@@ -80,7 +73,7 @@ const determineAction = (state: ModifierState): ClickAction => {
     return ClickAction.NewWindow;
   }
 
-  return resolveAction(state, DEFAULT_MAPPING, ClickAction.None);
+  return resolveAction(state, DEFAULT_MODIFIER_MAP, ClickAction.None);
 };
 
 const interceptEvent = async (event: MouseEvent) => {
