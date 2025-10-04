@@ -1,13 +1,14 @@
 import { MESSAGE_TYPES } from '../shared/constants';
 import { sendMessage } from '../shared/messaging';
 
-const app = document.querySelector('#app');
+const app = document.querySelector<HTMLElement>('#app');
 
 if (!app) {
   throw new Error('Popup root element missing');
 }
 
 type PermissionResult = boolean;
+const REPORT_ISSUE_URL = 'https://github.com/Jweale/unbreaklink/issues/new';
 
 const withCallback = <T>(executor: (resolve: (value: T) => void, reject: (reason: Error) => void) => void) =>
   new Promise<T>((resolve, reject) => {
@@ -68,27 +69,249 @@ const permissionsRemove = (originPattern: string) =>
     }
   });
 
+const createTab = (url: string) =>
+  withCallback<chrome.tabs.Tab | undefined>((resolve, reject) => {
+    try {
+      chrome.tabs.create({ url }, (tab) => {
+        resolve(tab);
+      });
+    } catch (error) {
+      reject(error as Error);
+    }
+  });
+
+const injectStyles = () => {
+  if (document.head.querySelector('[data-popup-style]')) {
+    return;
+  }
+  const style = document.createElement('style');
+  style.dataset.popupStyle = 'true';
+  style.textContent = `
+    :root {
+      color-scheme: light;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      font-size: 14px;
+      --color-surface: #ECDFF2;
+      --color-text: #1F261C;
+      --color-card-bg: #D0D9C7;
+      --color-card-border: #6D7356;
+      --color-accent: #6D7356;
+      --color-accent-hover: color-mix(in srgb, #6D7356 80%, #ECDFF2 20%);
+      --color-accent-text: #ECDFF2;
+      --color-muted: #D4D9B0;
+      --color-callout-bg: #ECDFF2;
+      --color-callout-border: #6D7356;
+      --color-link-hover-bg: rgba(109, 115, 86, 0.12);
+    }
+    html, body {
+      margin: 0;
+      padding: 0;
+      background: var(--color-surface);
+      color: var(--color-text);
+    }
+    #app {
+      min-width: 280px;
+      max-width: 320px;
+      padding: 12px;
+      background: transparent;
+    }
+    .popup {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      border-radius: 20px;
+      border: 1px solid var(--color-card-border);
+      padding: 16px;
+      background: var(--color-card-bg);
+      box-shadow: 0 8px 24px rgba(31, 38, 28, 0.15);
+    }
+    .popup__header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .popup__title {
+      margin: 0;
+      font-size: 16px;
+      font-weight: 600;
+    }
+    .popup__actions {
+      display: flex;
+      gap: 4px;
+    }
+    button {
+      font: inherit;
+      border-radius: 16px;
+      border: 1px solid var(--color-card-border);
+      padding: 6px 12px;
+      background: var(--color-muted);
+      color: var(--color-text);
+      cursor: pointer;
+      transition: background 120ms ease, transform 120ms ease;
+    }
+    button:hover:not([disabled]) {
+      background: var(--color-callout-bg);
+    }
+    button:focus-visible {
+      outline: 2px solid var(--color-accent);
+      outline-offset: 2px;
+    }
+    button[disabled] {
+      cursor: not-allowed;
+      opacity: 0.6;
+    }
+    button.popup__link {
+      border: none;
+      padding: 4px 8px;
+      border-radius: 10px;
+      background: transparent;
+      color: var(--color-accent);
+      text-decoration: underline;
+    }
+    button.popup__link:hover {
+      color: var(--color-accent-hover);
+      background: var(--color-link-hover-bg);
+    }
+    .card {
+      border-radius: 12px;
+      border: 1px solid var(--color-card-border);
+      padding: 12px;
+      background: rgba(236, 223, 242, 0.85);
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .card__title {
+      margin: 0;
+      font-size: 13px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      opacity: 0.7;
+    }
+    .status-text {
+      margin: 0;
+      line-height: 1.4;
+    }
+    .callout {
+      border-radius: 10px;
+      padding: 10px;
+      background: var(--color-callout-bg);
+      border: 1px solid var(--color-callout-border);
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .callout__text {
+      margin: 0;
+    }
+    .primary-button {
+      background: var(--color-accent);
+      color: var(--color-accent-text);
+      border-color: var(--color-accent);
+    }
+    .primary-button:hover:not([disabled]) {
+      background: var(--color-accent-hover);
+      border-color: var(--color-accent-hover);
+    }
+    .primary-button:active {
+      transform: translateY(1px);
+    }
+    .site-origin {
+      font-weight: 600;
+      margin: 0;
+    }
+  `;
+  document.head.append(style);
+};
+
 app.innerHTML = '';
 
+injectStyles();
+
+const container = document.createElement('div');
+container.className = 'popup';
+
+const header = document.createElement('div');
+header.className = 'popup__header';
+
 const heading = document.createElement('h1');
+heading.className = 'popup__title';
 heading.textContent = 'UnbreakLink';
 
+const quickActions = document.createElement('div');
+quickActions.className = 'popup__actions';
+
+const openOptionsButton = document.createElement('button');
+openOptionsButton.type = 'button';
+openOptionsButton.className = 'popup__link';
+openOptionsButton.textContent = 'Options';
+
+const reportIssueButton = document.createElement('button');
+reportIssueButton.type = 'button';
+reportIssueButton.className = 'popup__link';
+reportIssueButton.textContent = 'Report issue';
+
+quickActions.append(openOptionsButton, reportIssueButton);
+header.append(heading, quickActions);
+
+const globalCard = document.createElement('section');
+globalCard.className = 'card';
+
+const globalCardTitle = document.createElement('p');
+globalCardTitle.className = 'card__title';
+globalCardTitle.textContent = 'Global control';
+
 const globalStatusLine = document.createElement('p');
+globalStatusLine.className = 'status-text';
+
 const globalToggleButton = document.createElement('button');
+globalToggleButton.type = 'button';
+globalToggleButton.className = 'primary-button';
 globalToggleButton.disabled = true;
 
+globalCard.append(globalCardTitle, globalStatusLine, globalToggleButton);
+
+const siteCard = document.createElement('section');
+siteCard.className = 'card';
+
+const siteCardTitle = document.createElement('p');
+siteCardTitle.className = 'card__title';
+siteCardTitle.textContent = 'Site control';
+
 const siteLine = document.createElement('p');
+siteLine.className = 'site-origin';
+
 const siteStatusLine = document.createElement('p');
+siteStatusLine.className = 'status-text';
+
 const siteToggleButton = document.createElement('button');
+siteToggleButton.type = 'button';
+siteToggleButton.className = 'primary-button';
 siteToggleButton.disabled = true;
+
+const permissionCallout = document.createElement('div');
+permissionCallout.className = 'callout';
+permissionCallout.hidden = true;
+
+const permissionText = document.createElement('p');
+permissionText.className = 'callout__text';
+
+const permissionButton = document.createElement('button');
+permissionButton.type = 'button';
+permissionButton.className = 'primary-button';
+permissionButton.textContent = 'Allow this site';
+
+permissionCallout.append(permissionText, permissionButton);
+siteCard.append(siteCardTitle, siteLine, siteStatusLine, siteToggleButton, permissionCallout);
+
+container.append(header, globalCard, siteCard);
+app.append(container);
 
 globalStatusLine.textContent = 'Checking global status…';
 globalToggleButton.textContent = 'Loading…';
 siteLine.textContent = 'Determining active site…';
 siteStatusLine.textContent = '';
 siteToggleButton.textContent = 'Loading…';
-
-app.append(heading, globalStatusLine, globalToggleButton, siteLine, siteStatusLine, siteToggleButton);
 
 type PopupState = {
   globalEnabled: boolean;
@@ -108,10 +331,10 @@ const state: PopupState = {
 
 const renderGlobal = () => {
   if (state.globalEnabled) {
-    globalStatusLine.textContent = 'Extension is enabled globally.';
+    globalStatusLine.textContent = 'UnbreakLink is enabled everywhere.';
     globalToggleButton.textContent = 'Disable globally';
   } else {
-    globalStatusLine.textContent = 'Extension is disabled globally.';
+    globalStatusLine.textContent = 'UnbreakLink is disabled globally.';
     globalToggleButton.textContent = 'Enable globally';
   }
   globalToggleButton.disabled = false;
@@ -119,37 +342,46 @@ const renderGlobal = () => {
 
 const renderSite = () => {
   if (!state.originPattern) {
-    siteLine.textContent = 'No compatible site detected.';
+    siteLine.textContent = 'No compatible site detected';
     siteStatusLine.textContent = 'Open a standard web page to manage permissions.';
     siteToggleButton.textContent = 'Unavailable';
     siteToggleButton.disabled = true;
+    permissionCallout.hidden = true;
     return;
   }
 
   const site = state.originPattern.replace('/*', '');
-  siteLine.textContent = `Site: ${site}`;
+  siteLine.textContent = site;
 
   if (!state.globalEnabled) {
-    siteStatusLine.textContent = 'Enable globally to manage this site.';
+    siteStatusLine.textContent = 'Enable UnbreakLink globally to manage this site.';
     siteToggleButton.textContent = 'Enable globally first';
     siteToggleButton.disabled = true;
+    permissionCallout.hidden = true;
     return;
   }
 
   if (state.hasPermission && state.siteRuleEnabled) {
-    siteStatusLine.textContent = 'Enabled for this site.';
+    siteStatusLine.textContent = 'Fixes are active on this site.';
     siteToggleButton.textContent = 'Disable for this site';
     siteToggleButton.disabled = false;
+    permissionCallout.hidden = true;
     return;
   }
 
   if (!state.hasPermission) {
-    siteStatusLine.textContent = 'Not yet enabled for this site.';
-  } else {
-    siteStatusLine.textContent = 'Fix disabled for this site.';
+    siteStatusLine.textContent = 'Allow access to let UnbreakLink fix redirects on this site.';
+    siteToggleButton.textContent = 'Enable for this site';
+    siteToggleButton.disabled = false;
+    permissionText.textContent = 'Grant host permissions so UnbreakLink can clean up links here.';
+    permissionCallout.hidden = false;
+    return;
   }
+
+  siteStatusLine.textContent = 'Fixes are currently disabled for this site.';
   siteToggleButton.textContent = 'Enable for this site';
   siteToggleButton.disabled = false;
+  permissionCallout.hidden = true;
 };
 
 const renderUi = () => {
@@ -256,6 +488,88 @@ const loadState = async () => {
   await loadSiteState();
 };
 
+let siteOperationInProgress = false;
+
+const enableSite = async () => {
+  if (siteOperationInProgress) {
+    return false;
+  }
+  siteOperationInProgress = true;
+
+  if (!state.originPattern) {
+    await loadState();
+    siteOperationInProgress = false;
+    return false;
+  }
+
+  if (!state.hasPermission) {
+    const granted = await permissionsRequest(state.originPattern);
+    state.hasPermission = granted;
+    if (!granted) {
+      siteOperationInProgress = false;
+      return false;
+    }
+  }
+
+  try {
+    if (state.sanitizedOrigin) {
+      const response = await sendMessage<
+        { type: string; payload: { origin: string; enabled: boolean } },
+        { origin: string; enabled: boolean }
+      >({
+        type: MESSAGE_TYPES.setSiteRule,
+        payload: { origin: state.sanitizedOrigin, enabled: true }
+      });
+      state.sanitizedOrigin = response.origin ?? state.sanitizedOrigin;
+      state.siteRuleEnabled = Boolean(response.enabled);
+    } else {
+      state.siteRuleEnabled = true;
+    }
+
+    return true;
+  } finally {
+    siteOperationInProgress = false;
+  }
+};
+
+const disableSite = async () => {
+  if (siteOperationInProgress) {
+    return false;
+  }
+  siteOperationInProgress = true;
+
+  if (!state.originPattern) {
+    await loadState();
+    siteOperationInProgress = false;
+    return false;
+  }
+
+  const removed = await permissionsRemove(state.originPattern);
+  if (removed) {
+    state.hasPermission = false;
+  }
+
+  try {
+    if (state.sanitizedOrigin) {
+      const response = await sendMessage<
+        { type: string; payload: { origin: string; enabled: boolean } },
+        { origin: string; enabled: boolean }
+      >({
+        type: MESSAGE_TYPES.setSiteRule,
+        payload: { origin: state.sanitizedOrigin, enabled: false }
+      });
+      state.sanitizedOrigin = response.origin ?? state.sanitizedOrigin;
+      state.siteRuleEnabled = Boolean(response.enabled);
+    } else {
+      state.siteRuleEnabled = false;
+    }
+
+    return true;
+  } finally {
+    siteOperationInProgress = false;
+  }
+};
+
 globalToggleButton.addEventListener('click', async () => {
   globalToggleButton.disabled = true;
   globalStatusLine.textContent = 'Updating global setting…';
@@ -287,60 +601,64 @@ siteToggleButton.addEventListener('click', async () => {
   }
 
   siteToggleButton.disabled = true;
-  siteStatusLine.textContent = 'Processing…';
+  siteStatusLine.textContent = state.hasPermission && state.siteRuleEnabled ? 'Disabling…' : 'Enabling…';
 
   try {
     if (state.hasPermission && state.siteRuleEnabled) {
-      const removed = await permissionsRemove(state.originPattern);
-      state.hasPermission = state.hasPermission && !removed;
-      if (state.sanitizedOrigin) {
-        try {
-          const response = await sendMessage<
-            { type: string; payload: { origin: string; enabled: boolean } },
-            { origin: string; enabled: boolean }
-          >({
-            type: MESSAGE_TYPES.setSiteRule,
-            payload: { origin: state.sanitizedOrigin, enabled: false }
-          });
-          state.sanitizedOrigin = response.origin ?? state.sanitizedOrigin;
-          state.siteRuleEnabled = Boolean(response.enabled);
-        } catch (error) {
-          console.warn('Failed to disable site rule', error);
-          state.siteRuleEnabled = false;
-        }
-      } else {
-        state.siteRuleEnabled = false;
-      }
+      await disableSite();
     } else {
-      const granted = await permissionsRequest(state.originPattern);
-      state.hasPermission = granted;
-      if (granted && state.sanitizedOrigin) {
-        try {
-          const response = await sendMessage<
-            { type: string; payload: { origin: string; enabled: boolean } },
-            { origin: string; enabled: boolean }
-          >({
-            type: MESSAGE_TYPES.setSiteRule,
-            payload: { origin: state.sanitizedOrigin, enabled: true }
-          });
-          state.sanitizedOrigin = response.origin ?? state.sanitizedOrigin;
-          state.siteRuleEnabled = Boolean(response.enabled);
-        } catch (error) {
-          console.warn('Failed to enable site rule', error);
-          state.siteRuleEnabled = false;
-        }
-      } else if (!granted) {
-        state.siteRuleEnabled = false;
+      const enabled = await enableSite();
+      if (!enabled && !state.hasPermission) {
         siteStatusLine.textContent = 'Permission was not granted.';
       }
     }
   } catch (error) {
     siteStatusLine.textContent = (error as Error).message;
-    siteToggleButton.disabled = false;
+  }
+
+  siteToggleButton.disabled = false;
+  renderSite();
+});
+
+permissionButton.addEventListener('click', async () => {
+  if (!state.originPattern) {
+    await loadState();
     return;
   }
 
+  if (!state.globalEnabled) {
+    siteStatusLine.textContent = 'Enable UnbreakLink globally to manage this site.';
+    return;
+  }
+
+  permissionButton.disabled = true;
+  permissionButton.textContent = 'Requesting…';
+  siteStatusLine.textContent = 'Requesting permission…';
+
+  try {
+    const enabled = await enableSite();
+    if (!enabled && !state.hasPermission) {
+      siteStatusLine.textContent = 'Permission was not granted.';
+    }
+  } catch (error) {
+    siteStatusLine.textContent = (error as Error).message;
+  }
+
+  permissionButton.textContent = 'Allow this site';
+  permissionButton.disabled = false;
   renderSite();
+});
+
+openOptionsButton.addEventListener('click', () => {
+  if (chrome.runtime.openOptionsPage) {
+    void chrome.runtime.openOptionsPage();
+  }
+});
+
+reportIssueButton.addEventListener('click', () => {
+  createTab(REPORT_ISSUE_URL).catch((error) => {
+    console.warn('Failed to open report issue tab', error);
+  });
 });
 
 void loadState();

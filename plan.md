@@ -39,9 +39,9 @@
 - [x] Respect site rules inside content script gating logic.
 
 ### Task 3.2: Toolbar popup UI
-- [ ] Build popup UI showing current site status and enable/disable toggle.
-- [ ] Add call-to-action to request host permissions on first enable.
-- [ ] Surface quick actions (open options, report issue) while maintaining minimal footprint.
+- [x] Build popup UI showing current site status and enable/disable toggle.
+- [x] Add call-to-action to request host permissions on first enable.
+- [x] Surface quick actions (open options, report issue) while maintaining minimal footprint.
 
 ### Task 3.3: Runtime permission flow
 - [ ] Request `host_permissions` dynamically when toggling a site ON.
