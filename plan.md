@@ -34,19 +34,19 @@
 ## 3. Per-Site Control (Beta milestone)
 
 ### Task 3.1: Site rule management
-- [ ] Design storage schema for per-origin enablement preferences using `chrome.storage.sync`.
-- [ ] Implement utilities to read/write site rules with debounce and error handling.
-- [ ] Respect site rules inside content script gating logic.
+- [x] Design storage schema for per-origin enablement preferences using `chrome.storage.sync`.
+- [x] Implement utilities to read/write site rules with debounce and error handling.
+- [x] Respect site rules inside content script gating logic.
 
 ### Task 3.2: Toolbar popup UI
-- [ ] Build popup UI showing current site status and enable/disable toggle.
-- [ ] Add call-to-action to request host permissions on first enable.
-- [ ] Surface quick actions (open options, report issue) while maintaining minimal footprint.
+- [x] Build popup UI showing current site status and enable/disable toggle.
+- [x] Add call-to-action to request host permissions on first enable.
+- [x] Surface quick actions (open options, report issue) while maintaining minimal footprint.
 
 ### Task 3.3: Runtime permission flow
-- [ ] Request `host_permissions` dynamically when toggling a site ON.
-- [ ] Handle permission rejection gracefully and update UI state.
-- [ ] Store granted origins and sync with site rules for consistency.
+- [x] Request `host_permissions` dynamically when toggling a site ON.
+- [x] Handle permission rejection gracefully and update UI state.
+- [x] Store granted origins and sync with site rules for consistency.
 
 ## 4. Custom Modifier Mapping (Beta milestone)
 
