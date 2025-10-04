@@ -22,9 +22,9 @@
 - [x] Forward validated events to background for tab/window handling.
 
 ### Task 2.2: Background service worker actions
-- [ ] Handle requests to open background tabs (`chrome.tabs.create`) and new windows (`chrome.windows.create`).
-- [ ] Maintain minimal runtime state and ensure wake-up reliability (alarms or resumable handlers).
-- [ ] Log fix success metrics locally for future telemetry hook.
+- [x] Handle requests to open background tabs (`chrome.tabs.create`) and new windows (`chrome.windows.create`).
+- [x] Maintain minimal runtime state and ensure wake-up reliability (alarms or resumable handlers).
+- [x] Log fix success metrics locally for future telemetry hook.
 
 ### Task 2.3: Global enable/disable controls
 - [ ] Add synced storage flag for global enable state (default OFF).

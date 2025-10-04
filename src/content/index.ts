@@ -111,8 +111,7 @@ const interceptEvent = async (event: MouseEvent) => {
     type: MESSAGE_TYPES.executeClickAction,
     payload: {
       url,
-      action,
-      modifierState
+      action
     }
   }).catch((error: Error) => {
     console.warn('UnbreakLink failed to forward click action', error);
