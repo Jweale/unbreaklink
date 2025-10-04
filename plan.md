@@ -16,20 +16,20 @@
 ## 2. Core Interception Engine (Alpha milestone)
 
 ### Task 2.1: Implement click interception content script
-- [ ] Inject listener at `document_start` with `useCapture: true` and passive safety checks.
-- [ ] Detect anchor and clickable elements while respecting editable/ignored contexts.
-- [ ] Normalize URLs (resolve relative links, handle data attributes).
-- [ ] Forward validated events to background for tab/window handling.
+- [x] Inject listener at `document_start` with `useCapture: true` and passive safety checks.
+- [x] Detect anchor and clickable elements while respecting editable/ignored contexts.
+- [x] Normalize URLs (resolve relative links, handle data attributes).
+- [x] Forward validated events to background for tab/window handling.
 
 ### Task 2.2: Background service worker actions
-- [ ] Handle requests to open background tabs (`chrome.tabs.create`) and new windows (`chrome.windows.create`).
-- [ ] Maintain minimal runtime state and ensure wake-up reliability (alarms or resumable handlers).
-- [ ] Log fix success metrics locally for future telemetry hook.
+- [x] Handle requests to open background tabs (`chrome.tabs.create`) and new windows (`chrome.windows.create`).
+- [x] Maintain minimal runtime state and ensure wake-up reliability (alarms or resumable handlers).
+- [x] Log fix success metrics locally for future telemetry hook.
 
 ### Task 2.3: Global enable/disable controls
-- [ ] Add synced storage flag for global enable state (default OFF).
-- [ ] Provide safeguard to bypass interception when global state is disabled.
-- [ ] Wire popup toggle to update and persist global state.
+- [x] Add synced storage flag for global enable state (default OFF).
+- [x] Provide safeguard to bypass interception when global state is disabled.
+- [x] Wire popup toggle to update and persist global state.
 
 ## 3. Per-Site Control (Beta milestone)
 

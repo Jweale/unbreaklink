@@ -1,3 +1,6 @@
+import { MESSAGE_TYPES } from '../shared/constants';
+import { sendMessage } from '../shared/messaging';
+
 const app = document.querySelector('#app');
 
 if (!app) {
@@ -69,42 +72,79 @@ app.innerHTML = '';
 
 const heading = document.createElement('h1');
 heading.textContent = 'UnbreakLink';
-const siteLine = document.createElement('p');
-const statusLine = document.createElement('p');
-const toggleButton = document.createElement('button');
-toggleButton.disabled = true;
 
-app.append(heading, siteLine, statusLine, toggleButton);
+const globalStatusLine = document.createElement('p');
+const globalToggleButton = document.createElement('button');
+globalToggleButton.disabled = true;
+
+const siteLine = document.createElement('p');
+const siteStatusLine = document.createElement('p');
+const siteToggleButton = document.createElement('button');
+siteToggleButton.disabled = true;
+
+globalStatusLine.textContent = 'Checking global status…';
+globalToggleButton.textContent = 'Loading…';
+siteLine.textContent = 'Determining active site…';
+siteStatusLine.textContent = '';
+siteToggleButton.textContent = 'Loading…';
+
+app.append(heading, globalStatusLine, globalToggleButton, siteLine, siteStatusLine, siteToggleButton);
 
 type PopupState = {
+  globalEnabled: boolean;
   originPattern: string | null;
   hasPermission: boolean;
 };
 
 const state: PopupState = {
+  globalEnabled: false,
   originPattern: null,
   hasPermission: false
 };
 
-const updateUi = () => {
+const renderGlobal = () => {
+  if (state.globalEnabled) {
+    globalStatusLine.textContent = 'Extension is enabled globally.';
+    globalToggleButton.textContent = 'Disable globally';
+  } else {
+    globalStatusLine.textContent = 'Extension is disabled globally.';
+    globalToggleButton.textContent = 'Enable globally';
+  }
+  globalToggleButton.disabled = false;
+};
+
+const renderSite = () => {
   if (!state.originPattern) {
     siteLine.textContent = 'No compatible site detected.';
-    statusLine.textContent = 'Open a standard web page to manage permissions.';
-    toggleButton.textContent = 'Unavailable';
-    toggleButton.disabled = true;
+    siteStatusLine.textContent = 'Open a standard web page to manage permissions.';
+    siteToggleButton.textContent = 'Unavailable';
+    siteToggleButton.disabled = true;
     return;
   }
 
   const site = state.originPattern.replace('/*', '');
   siteLine.textContent = `Site: ${site}`;
-  if (state.hasPermission) {
-    statusLine.textContent = 'Enabled for this site.';
-    toggleButton.textContent = 'Disable for this site';
-  } else {
-    statusLine.textContent = 'Not yet enabled for this site.';
-    toggleButton.textContent = 'Enable for this site';
+
+  if (!state.globalEnabled) {
+    siteStatusLine.textContent = 'Enable globally to manage this site.';
+    siteToggleButton.textContent = 'Enable globally first';
+    siteToggleButton.disabled = true;
+    return;
   }
-  toggleButton.disabled = false;
+
+  if (state.hasPermission) {
+    siteStatusLine.textContent = 'Enabled for this site.';
+    siteToggleButton.textContent = 'Disable for this site';
+  } else {
+    siteStatusLine.textContent = 'Not yet enabled for this site.';
+    siteToggleButton.textContent = 'Enable for this site';
+  }
+  siteToggleButton.disabled = false;
+};
+
+const renderUi = () => {
+  renderGlobal();
+  renderSite();
 };
 
 const deriveOriginPattern = (urlString: string | undefined): string | null => {
@@ -123,32 +163,85 @@ const deriveOriginPattern = (urlString: string | undefined): string | null => {
   }
 };
 
-const loadState = async () => {
+const loadGlobalEnabled = async () => {
+  globalToggleButton.disabled = true;
+  globalStatusLine.textContent = 'Checking global status…';
+  globalToggleButton.textContent = 'Loading…';
+
+  try {
+    const response = await sendMessage<{ type: string }, { enabled: boolean }>({
+      type: MESSAGE_TYPES.getGlobalEnabled
+    });
+    state.globalEnabled = Boolean(response.enabled);
+    renderGlobal();
+  } catch (error) {
+    state.globalEnabled = false;
+    globalStatusLine.textContent = `Failed to read global status: ${(error as Error).message}`;
+    globalToggleButton.textContent = 'Retry';
+    globalToggleButton.disabled = false;
+  }
+};
+
+const loadSiteState = async () => {
+  siteToggleButton.disabled = true;
+  siteStatusLine.textContent = 'Checking site permissions…';
+
   try {
     const tab = await queryActiveTab();
     state.originPattern = deriveOriginPattern(tab?.url);
     if (!state.originPattern) {
-      updateUi();
+      state.hasPermission = false;
+      renderSite();
       return;
     }
     state.hasPermission = await permissionsContains(state.originPattern);
-    updateUi();
+    renderSite();
   } catch (error) {
     siteLine.textContent = 'Unable to load current tab information.';
-    statusLine.textContent = (error as Error).message;
-    toggleButton.textContent = 'Retry';
-    toggleButton.disabled = false;
+    siteStatusLine.textContent = (error as Error).message;
+    siteToggleButton.textContent = 'Retry';
+    siteToggleButton.disabled = false;
+    state.hasPermission = false;
   }
 };
 
-toggleButton.addEventListener('click', async () => {
+const loadState = async () => {
+  await loadGlobalEnabled();
+  await loadSiteState();
+};
+
+globalToggleButton.addEventListener('click', async () => {
+  globalToggleButton.disabled = true;
+  globalStatusLine.textContent = 'Updating global setting…';
+
+  try {
+    const response = await sendMessage<{ type: string; payload: boolean }, { enabled: boolean }>({
+      type: MESSAGE_TYPES.setGlobalEnabled,
+      payload: !state.globalEnabled
+    });
+    state.globalEnabled = Boolean(response.enabled);
+    renderGlobal();
+    await loadSiteState();
+  } catch (error) {
+    globalStatusLine.textContent = `Failed to update global status: ${(error as Error).message}`;
+    globalToggleButton.textContent = 'Retry';
+    globalToggleButton.disabled = false;
+  }
+});
+
+siteToggleButton.addEventListener('click', async () => {
   if (!state.originPattern) {
     await loadState();
     return;
   }
 
-  toggleButton.disabled = true;
-  statusLine.textContent = 'Processing…';
+  if (!state.globalEnabled) {
+    siteStatusLine.textContent = 'Enable globally to manage site permissions.';
+    return;
+  }
+
+  siteToggleButton.disabled = true;
+  siteStatusLine.textContent = 'Processing…';
 
   try {
     if (state.hasPermission) {
@@ -159,12 +252,27 @@ toggleButton.addEventListener('click', async () => {
       state.hasPermission = granted;
     }
   } catch (error) {
-    statusLine.textContent = (error as Error).message;
-    toggleButton.disabled = false;
+    siteStatusLine.textContent = (error as Error).message;
+    siteToggleButton.disabled = false;
     return;
   }
 
-  updateUi();
+  renderSite();
 });
 
 void loadState();
+
+chrome.runtime.onMessage.addListener((message) => {
+  if (typeof message !== 'object' || message === null) {
+    return;
+  }
+  const typed = message as { type?: string; payload?: { enabled?: boolean } };
+  if (typed.type !== MESSAGE_TYPES.setGlobalEnabled) {
+    return;
+  }
+  const enabled = typed.payload?.enabled;
+  if (typeof enabled === 'boolean') {
+    state.globalEnabled = enabled;
+    renderUi();
+  }
+});
