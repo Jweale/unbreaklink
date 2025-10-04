@@ -4,7 +4,7 @@ const manifest: chrome.runtime.ManifestV3 = {
   version: '0.0.1',
   description: 'Restore modifier-click behaviour with per-site control.',
   permissions: ['scripting', 'storage', 'tabs', 'activeTab'],
-  host_permissions: ['<all_urls>'],
+  optional_host_permissions: ['<all_urls>'],
   action: {
     default_popup: 'popup.html'
   },
