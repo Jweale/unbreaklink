@@ -9,9 +9,9 @@
 - [x] Integrate automated build/watch scripts and ensure Chrome extension reload workflow.
 
 ### Task 1.2: Implement shared utilities
-- [ ] Define shared constants for actions, modifier keys, and storage keys.
-- [ ] Create helper module for modifier detection and event normalization.
-- [ ] Provide lightweight messaging wrapper between content scripts and service worker.
+- [x] Define shared constants for actions, modifier keys, and storage keys.
+- [x] Create helper module for modifier detection and event normalization.
+- [x] Provide lightweight messaging wrapper between content scripts and service worker.
 
 ## 2. Core Interception Engine (Alpha milestone)
 
