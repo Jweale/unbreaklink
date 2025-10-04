@@ -18,5 +18,6 @@ export const STORAGE_KEYS = {
 export const MESSAGE_TYPES = {
   updateModifierMap: 'UPDATE_MODIFIER_MAP',
   toggleSite: 'TOGGLE_SITE',
-  ping: 'PING'
+  ping: 'PING',
+  executeClickAction: 'EXECUTE_CLICK_ACTION'
 } as const;

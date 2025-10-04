@@ -16,10 +16,10 @@
 ## 2. Core Interception Engine (Alpha milestone)
 
 ### Task 2.1: Implement click interception content script
-- [ ] Inject listener at `document_start` with `useCapture: true` and passive safety checks.
-- [ ] Detect anchor and clickable elements while respecting editable/ignored contexts.
-- [ ] Normalize URLs (resolve relative links, handle data attributes).
-- [ ] Forward validated events to background for tab/window handling.
+- [x] Inject listener at `document_start` with `useCapture: true` and passive safety checks.
+- [x] Detect anchor and clickable elements while respecting editable/ignored contexts.
+- [x] Normalize URLs (resolve relative links, handle data attributes).
+- [x] Forward validated events to background for tab/window handling.
 
 ### Task 2.2: Background service worker actions
 - [ ] Handle requests to open background tabs (`chrome.tabs.create`) and new windows (`chrome.windows.create`).
