@@ -21,5 +21,8 @@ export const MESSAGE_TYPES = {
   ping: 'PING',
   executeClickAction: 'EXECUTE_CLICK_ACTION',
   getGlobalEnabled: 'GET_GLOBAL_ENABLED',
-  setGlobalEnabled: 'SET_GLOBAL_ENABLED'
+  setGlobalEnabled: 'SET_GLOBAL_ENABLED',
+  getSiteRule: 'GET_SITE_RULE',
+  setSiteRule: 'SET_SITE_RULE',
+  siteRuleUpdated: 'SITE_RULE_UPDATED'
 } as const;

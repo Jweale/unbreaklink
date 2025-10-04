@@ -1,3 +1,4 @@
+import { createSiteRuleManager } from './siteRules';
 import { ClickAction, MESSAGE_TYPES, STORAGE_KEYS } from '../shared/constants';
 import { registerMessageHandler } from '../shared/messaging';
 
@@ -10,6 +11,8 @@ const state: ServiceState = {
   startups: 0,
   fixCount: 0
 };
+
+const siteRuleManager = createSiteRuleManager();
 
 const loadState = async () => {
   try {
@@ -89,15 +92,32 @@ const bootstrap = async () => {
   await loadState();
   state.startups += 1;
   await saveState();
+  await siteRuleManager.load();
 
   registerMessageHandler(MESSAGE_TYPES.ping, () => ({ ok: true }));
   registerMessageHandler(MESSAGE_TYPES.executeClickAction, handleClickAction);
   registerMessageHandler(MESSAGE_TYPES.getGlobalEnabled, getGlobalEnabled);
   registerMessageHandler(MESSAGE_TYPES.setGlobalEnabled, setGlobalEnabled);
+  registerMessageHandler(MESSAGE_TYPES.getSiteRule, async (origin: string) => {
+    if (typeof origin !== 'string') {
+      return { origin: '', enabled: false };
+    }
+    return siteRuleManager.getRuleState(origin);
+  });
+  registerMessageHandler(
+    MESSAGE_TYPES.setSiteRule,
+    async (payload: { origin: string; enabled: boolean }) => {
+      if (!payload || typeof payload.origin !== 'string') {
+        return { origin: '', enabled: false };
+      }
+      return siteRuleManager.setRule(payload.origin, Boolean(payload.enabled));
+    }
+  );
 
   chrome.runtime.onSuspend.addListener(() => {
     console.info('UnbreakLink background service worker suspended', { ...state });
     void saveState();
+    void siteRuleManager.flush();
   });
 };
 

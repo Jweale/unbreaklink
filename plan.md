@@ -34,9 +34,9 @@
 ## 3. Per-Site Control (Beta milestone)
 
 ### Task 3.1: Site rule management
-- [ ] Design storage schema for per-origin enablement preferences using `chrome.storage.sync`.
-- [ ] Implement utilities to read/write site rules with debounce and error handling.
-- [ ] Respect site rules inside content script gating logic.
+- [x] Design storage schema for per-origin enablement preferences using `chrome.storage.sync`.
+- [x] Implement utilities to read/write site rules with debounce and error handling.
+- [x] Respect site rules inside content script gating logic.
 
 ### Task 3.2: Toolbar popup UI
 - [ ] Build popup UI showing current site status and enable/disable toggle.

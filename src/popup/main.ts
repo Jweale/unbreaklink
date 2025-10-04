@@ -93,13 +93,17 @@ app.append(heading, globalStatusLine, globalToggleButton, siteLine, siteStatusLi
 type PopupState = {
   globalEnabled: boolean;
   originPattern: string | null;
+  sanitizedOrigin: string | null;
   hasPermission: boolean;
+  siteRuleEnabled: boolean;
 };
 
 const state: PopupState = {
   globalEnabled: false,
   originPattern: null,
-  hasPermission: false
+  sanitizedOrigin: null,
+  hasPermission: false,
+  siteRuleEnabled: false
 };
 
 const renderGlobal = () => {
@@ -132,13 +136,19 @@ const renderSite = () => {
     return;
   }
 
-  if (state.hasPermission) {
+  if (state.hasPermission && state.siteRuleEnabled) {
     siteStatusLine.textContent = 'Enabled for this site.';
     siteToggleButton.textContent = 'Disable for this site';
-  } else {
-    siteStatusLine.textContent = 'Not yet enabled for this site.';
-    siteToggleButton.textContent = 'Enable for this site';
+    siteToggleButton.disabled = false;
+    return;
   }
+
+  if (!state.hasPermission) {
+    siteStatusLine.textContent = 'Not yet enabled for this site.';
+  } else {
+    siteStatusLine.textContent = 'Fix disabled for this site.';
+  }
+  siteToggleButton.textContent = 'Enable for this site';
   siteToggleButton.disabled = false;
 };
 
@@ -163,6 +173,16 @@ const deriveOriginPattern = (urlString: string | undefined): string | null => {
   }
 };
 
+const originFromPattern = (pattern: string | null) => {
+  if (!pattern) {
+    return null;
+  }
+  if (pattern.endsWith('/*')) {
+    return pattern.slice(0, -2);
+  }
+  return pattern;
+};
+
 const loadGlobalEnabled = async () => {
   globalToggleButton.disabled = true;
   globalStatusLine.textContent = 'Checking global status…';
@@ -182,6 +202,28 @@ const loadGlobalEnabled = async () => {
   }
 };
 
+const loadSiteRule = async () => {
+  if (!state.sanitizedOrigin) {
+    state.siteRuleEnabled = false;
+    return;
+  }
+
+  try {
+    const response = await sendMessage<
+      { type: string; payload: string },
+      { origin: string; enabled: boolean }
+    >({
+      type: MESSAGE_TYPES.getSiteRule,
+      payload: state.sanitizedOrigin
+    });
+    state.sanitizedOrigin = response.origin ?? state.sanitizedOrigin;
+    state.siteRuleEnabled = Boolean(response.enabled);
+  } catch (error) {
+    state.siteRuleEnabled = false;
+    console.warn('Failed to load site rule', error);
+  }
+};
+
 const loadSiteState = async () => {
   siteToggleButton.disabled = true;
   siteStatusLine.textContent = 'Checking site permissions…';
@@ -189,12 +231,15 @@ const loadSiteState = async () => {
   try {
     const tab = await queryActiveTab();
     state.originPattern = deriveOriginPattern(tab?.url);
+    state.sanitizedOrigin = originFromPattern(state.originPattern);
     if (!state.originPattern) {
       state.hasPermission = false;
+      state.siteRuleEnabled = false;
       renderSite();
       return;
     }
     state.hasPermission = await permissionsContains(state.originPattern);
+    await loadSiteRule();
     renderSite();
   } catch (error) {
     siteLine.textContent = 'Unable to load current tab information.';
@@ -202,6 +247,7 @@ const loadSiteState = async () => {
     siteToggleButton.textContent = 'Retry';
     siteToggleButton.disabled = false;
     state.hasPermission = false;
+    state.siteRuleEnabled = false;
   }
 };
 
@@ -244,12 +290,49 @@ siteToggleButton.addEventListener('click', async () => {
   siteStatusLine.textContent = 'Processing…';
 
   try {
-    if (state.hasPermission) {
+    if (state.hasPermission && state.siteRuleEnabled) {
       const removed = await permissionsRemove(state.originPattern);
       state.hasPermission = state.hasPermission && !removed;
+      if (state.sanitizedOrigin) {
+        try {
+          const response = await sendMessage<
+            { type: string; payload: { origin: string; enabled: boolean } },
+            { origin: string; enabled: boolean }
+          >({
+            type: MESSAGE_TYPES.setSiteRule,
+            payload: { origin: state.sanitizedOrigin, enabled: false }
+          });
+          state.sanitizedOrigin = response.origin ?? state.sanitizedOrigin;
+          state.siteRuleEnabled = Boolean(response.enabled);
+        } catch (error) {
+          console.warn('Failed to disable site rule', error);
+          state.siteRuleEnabled = false;
+        }
+      } else {
+        state.siteRuleEnabled = false;
+      }
     } else {
       const granted = await permissionsRequest(state.originPattern);
       state.hasPermission = granted;
+      if (granted && state.sanitizedOrigin) {
+        try {
+          const response = await sendMessage<
+            { type: string; payload: { origin: string; enabled: boolean } },
+            { origin: string; enabled: boolean }
+          >({
+            type: MESSAGE_TYPES.setSiteRule,
+            payload: { origin: state.sanitizedOrigin, enabled: true }
+          });
+          state.sanitizedOrigin = response.origin ?? state.sanitizedOrigin;
+          state.siteRuleEnabled = Boolean(response.enabled);
+        } catch (error) {
+          console.warn('Failed to enable site rule', error);
+          state.siteRuleEnabled = false;
+        }
+      } else if (!granted) {
+        state.siteRuleEnabled = false;
+        siteStatusLine.textContent = 'Permission was not granted.';
+      }
     }
   } catch (error) {
     siteStatusLine.textContent = (error as Error).message;
@@ -266,13 +349,25 @@ chrome.runtime.onMessage.addListener((message) => {
   if (typeof message !== 'object' || message === null) {
     return;
   }
-  const typed = message as { type?: string; payload?: { enabled?: boolean } };
-  if (typed.type !== MESSAGE_TYPES.setGlobalEnabled) {
+  const typed = message as {
+    type?: string;
+    payload?: { enabled?: boolean; origin?: string };
+  };
+
+  if (typed.type === MESSAGE_TYPES.setGlobalEnabled) {
+    const enabled = typed.payload?.enabled;
+    if (typeof enabled === 'boolean') {
+      state.globalEnabled = enabled;
+      renderUi();
+    }
     return;
   }
-  const enabled = typed.payload?.enabled;
-  if (typeof enabled === 'boolean') {
-    state.globalEnabled = enabled;
-    renderUi();
+
+  if (typed.type === MESSAGE_TYPES.siteRuleUpdated) {
+    const origin = typed.payload?.origin;
+    if (origin && origin === state.sanitizedOrigin && typeof typed.payload?.enabled === 'boolean') {
+      state.siteRuleEnabled = typed.payload.enabled;
+      renderSite();
+    }
   }
 });

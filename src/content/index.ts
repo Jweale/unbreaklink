@@ -84,7 +84,7 @@ const determineAction = (state: ModifierState): ClickAction => {
 };
 
 const interceptEvent = async (event: MouseEvent) => {
-  if (!globalEnabled) {
+  if (!globalEnabled || !siteEnabled) {
     return;
   }
 
@@ -128,6 +128,8 @@ const listenerOptions: AddEventListenerOptions = {
 };
 
 let globalEnabled = false;
+let siteEnabled = false;
+let trackedOrigin = window.location.origin;
 
 const eventHandler = (event: Event) => {
   void interceptEvent(event as MouseEvent);
@@ -148,6 +150,18 @@ const initialize = async () => {
     console.warn('UnbreakLink failed to obtain global enabled state', error);
     globalEnabled = false;
   }
+
+  try {
+    const response = await sendMessage<{ type: string; payload: string }, { origin: string; enabled: boolean }>({
+      type: MESSAGE_TYPES.getSiteRule,
+      payload: trackedOrigin
+    });
+    trackedOrigin = response.origin || trackedOrigin;
+    siteEnabled = Boolean(response.enabled);
+  } catch (error) {
+    console.warn('UnbreakLink failed to obtain site rule state', error);
+    siteEnabled = false;
+  }
 };
 
 const handleGlobalToggle = (message: unknown) => {
@@ -164,8 +178,26 @@ const handleGlobalToggle = (message: unknown) => {
   }
 };
 
+const handleSiteRuleUpdate = (message: unknown) => {
+  if (typeof message !== 'object' || message === null) {
+    return;
+  }
+  const typed = message as { type?: string; payload?: { origin?: string; enabled?: boolean } };
+  if (typed.type !== MESSAGE_TYPES.siteRuleUpdated) {
+    return;
+  }
+  const origin = typed.payload?.origin;
+  if (!origin || origin !== trackedOrigin) {
+    return;
+  }
+  if (typeof typed.payload?.enabled === 'boolean') {
+    siteEnabled = typed.payload.enabled;
+  }
+};
+
 chrome.runtime.onMessage.addListener((message) => {
   handleGlobalToggle(message);
+  handleSiteRuleUpdate(message);
 });
 
 void initialize();
