@@ -89,6 +89,34 @@ const setGlobalEnabled = async (enabled: boolean) => {
   return { enabled: normalized };
 };
 
+const getPreviewEnabled = async () => {
+  const stored = await chrome.storage.sync.get(STORAGE_KEYS.previewEnabled);
+  const value = stored[STORAGE_KEYS.previewEnabled];
+  return { enabled: typeof value === 'boolean' ? value : true };
+};
+
+const setPreviewEnabled = async (enabled: boolean) => {
+  const normalized = Boolean(enabled);
+  await chrome.storage.sync.set({ [STORAGE_KEYS.previewEnabled]: normalized });
+  chrome.runtime.sendMessage(
+    {
+      type: MESSAGE_TYPES.setPreviewEnabled,
+      payload: { enabled: normalized }
+    },
+    () => {
+      const error = chrome.runtime.lastError;
+      if (!error) {
+        return;
+      }
+      const message = error.message ?? '';
+      if (!message.includes('Receiving end does not exist')) {
+        console.warn('UnbreakLink background failed to broadcast preview state', error);
+      }
+    }
+  );
+  return { enabled: normalized };
+};
+
 const bootstrap = async () => {
   await loadState();
   state.startups += 1;
@@ -99,6 +127,8 @@ const bootstrap = async () => {
   registerMessageHandler(MESSAGE_TYPES.executeClickAction, handleClickAction);
   registerMessageHandler(MESSAGE_TYPES.getGlobalEnabled, getGlobalEnabled);
   registerMessageHandler(MESSAGE_TYPES.setGlobalEnabled, setGlobalEnabled);
+  registerMessageHandler(MESSAGE_TYPES.getPreviewEnabled, getPreviewEnabled);
+  registerMessageHandler(MESSAGE_TYPES.setPreviewEnabled, setPreviewEnabled);
   registerMessageHandler(MESSAGE_TYPES.getSiteRule, async (origin: string) => {
     if (typeof origin !== 'string') {
       return { origin: '', enabled: false };

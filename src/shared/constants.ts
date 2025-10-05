@@ -12,7 +12,8 @@ export const MODIFIER_KEYS: readonly ModifierKey[] = ['alt', 'ctrl', 'meta', 'sh
 export const STORAGE_KEYS = {
   globalEnabled: 'globalEnabled',
   siteRules: 'siteRules',
-  modifierMap: 'modifierMap'
+  modifierMap: 'modifierMap',
+  previewEnabled: 'previewEnabled'
 } as const;
 
 export const MESSAGE_TYPES = {
@@ -22,6 +23,8 @@ export const MESSAGE_TYPES = {
   executeClickAction: 'EXECUTE_CLICK_ACTION',
   getGlobalEnabled: 'GET_GLOBAL_ENABLED',
   setGlobalEnabled: 'SET_GLOBAL_ENABLED',
+  getPreviewEnabled: 'GET_PREVIEW_ENABLED',
+  setPreviewEnabled: 'SET_PREVIEW_ENABLED',
   getSiteRule: 'GET_SITE_RULE',
   setSiteRule: 'SET_SITE_RULE',
   siteRuleUpdated: 'SITE_RULE_UPDATED'
