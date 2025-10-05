@@ -21,20 +21,211 @@ const deriveTargetElement = (event: MouseEvent): Element | null => {
   return target.closest('a, [data-unbreaklink-clickable="true"]');
 };
 
+const TRACKING_PARAM_NAMES = new Set([
+  'fbclid',
+  'gclid',
+  'gbraid',
+  'wbraid',
+  'igshid',
+  'msclkid',
+  'mkt_tok',
+  'mc_cid',
+  'mc_eid',
+  'vero_conv',
+  'vero_id',
+  'wickedid',
+  'yclid',
+  'zanpid',
+  'mcid'
+]);
+
+const TRACKING_PARAM_PREFIXES = [
+  'utm_',
+  'mtm_',
+  'pk_',
+  'piwik_',
+  'ga_',
+  'hsa_',
+  'oly_',
+  'vero_',
+  'adc_',
+  'trk_',
+  'referrer_',
+  'campaign_'
+];
+
+const TRACKING_PARAM_SUFFIXES = ['_clid', '_cvid', '_adid', '_campaign'];
+
+type RedirectResolver = {
+  matches: (url: URL) => boolean;
+  extractTarget: (url: URL) => string | null;
+};
+
+const REDIRECT_RESOLVERS: RedirectResolver[] = [
+  {
+    matches: (url) =>
+      url.hostname === 'www.google.com' && (url.pathname === '/url' || url.pathname === '/imgres'),
+    extractTarget: (url) => url.searchParams.get('url') ?? url.searchParams.get('q') ?? url.searchParams.get('imgurl')
+  },
+  {
+    matches: (url) =>
+      (url.hostname === 'l.facebook.com' || url.hostname === 'lm.facebook.com' || url.hostname === 'l.messenger.com') &&
+      url.pathname === '/l.php',
+    extractTarget: (url) => url.searchParams.get('u')
+  },
+  {
+    matches: (url) => url.hostname === 'l.instagram.com' && url.pathname === '/',
+    extractTarget: (url) => url.searchParams.get('u')
+  },
+  {
+    matches: (url) => url.hostname.endsWith('.linkedin.com') && url.pathname.startsWith('/safety/go'),
+    extractTarget: (url) => url.searchParams.get('url')
+  },
+  {
+    matches: (url) => url.hostname === 'outgoing.prod.mozaws.net',
+    extractTarget: (url) => url.searchParams.get('to')
+  },
+  {
+    matches: (url) => url.hostname === 't.umblr.com' && url.pathname === '/redirect',
+    extractTarget: (url) => url.searchParams.get('z')
+  }
+];
+
+const MAX_REDIRECT_UNWRAP_ITERATIONS = 3;
+
+const decodePotentiallyEncodedComponent = (value: string): string => {
+  let output = value;
+  for (let i = 0; i < 3; i += 1) {
+    try {
+      const decoded = decodeURIComponent(output);
+      if (decoded === output) {
+        break;
+      }
+      output = decoded;
+    } catch {
+      break;
+    }
+  }
+  return output;
+};
+
+const unwrapRedirect = (url: URL): URL => {
+  for (const resolver of REDIRECT_RESOLVERS) {
+    if (!resolver.matches(url)) {
+      continue;
+    }
+    const target = resolver.extractTarget(url);
+    if (!target) {
+      continue;
+    }
+    const decoded = decodePotentiallyEncodedComponent(target);
+    try {
+      return new URL(decoded, url);
+    } catch {
+      continue;
+    }
+  }
+  return url;
+};
+
+const shouldStripTrackingParam = (param: string): boolean => {
+  const normalized = param.toLowerCase();
+  if (TRACKING_PARAM_NAMES.has(normalized)) {
+    return true;
+  }
+  if (TRACKING_PARAM_PREFIXES.some((prefix) => normalized.startsWith(prefix))) {
+    return true;
+  }
+  if (TRACKING_PARAM_SUFFIXES.some((suffix) => normalized.endsWith(suffix))) {
+    return true;
+  }
+  return false;
+};
+
+const stripTrackingParams = (url: URL) => {
+  const keysToRemove: string[] = [];
+  url.searchParams.forEach((_, key) => {
+    if (shouldStripTrackingParam(key)) {
+      keysToRemove.push(key);
+    }
+  });
+  if (!keysToRemove.length) {
+    return;
+  }
+  for (const key of keysToRemove) {
+    url.searchParams.delete(key);
+  }
+  if (!url.searchParams.toString()) {
+    url.search = '';
+  }
+};
+
+const stripTrackingHash = (url: URL) => {
+  const fragment = url.hash.startsWith('#') ? url.hash.slice(1) : url.hash;
+  if (!fragment || !fragment.includes('=')) {
+    return;
+  }
+  const params = new URLSearchParams(fragment);
+  const toRemove: string[] = [];
+  params.forEach((_, key) => {
+    if (shouldStripTrackingParam(key)) {
+      toRemove.push(key);
+    }
+  });
+  if (!toRemove.length) {
+    return;
+  }
+  for (const key of toRemove) {
+    params.delete(key);
+  }
+  const next = params.toString();
+  url.hash = next ? `#${next}` : '';
+};
+
+const sanitizeResolvedUrl = (url: URL): string | null => {
+  try {
+    let current = new URL(url.href);
+    const visited = new Set<string>();
+    for (let i = 0; i < MAX_REDIRECT_UNWRAP_ITERATIONS; i += 1) {
+      if (visited.has(current.href)) {
+        break;
+      }
+      visited.add(current.href);
+      const unwrapped = unwrapRedirect(current);
+      if (unwrapped.href === current.href) {
+        break;
+      }
+      current = new URL(unwrapped.href);
+    }
+    stripTrackingParams(current);
+    stripTrackingHash(current);
+    return current.href;
+  } catch {
+    return null;
+  }
+};
+
+const tryCreateAbsoluteUrl = (input: string): URL | null => {
+  try {
+    return new URL(input, document.baseURI);
+  } catch {
+    return null;
+  }
+};
+
 const resolveUrl = (element: Element | null): string | null => {
   if (!element) {
     return null;
   }
 
   const anchor = element.closest('a');
+  const candidateValues: string[] = [];
+  const seen = new Set<string>();
+
   if (anchor) {
     const href = anchor.getAttribute('href');
-    if (href && !href.startsWith('javascript:')) {
-      try {
-        return new URL(href, document.baseURI).toString();
-      } catch {
-        // fall through to dataset checks
-      }
+    if (href) {
+      candidateValues.push(href);
     }
 
     const candidates = [
@@ -45,24 +236,35 @@ const resolveUrl = (element: Element | null): string | null => {
     ];
 
     for (const candidate of candidates) {
-      if (!candidate) {
-        continue;
-      }
-      try {
-        return new URL(candidate, document.baseURI).toString();
-      } catch {
-        continue;
+      if (candidate) {
+        candidateValues.push(candidate);
       }
     }
   }
 
   const dataTarget = element.getAttribute('data-href') ?? element.getAttribute('data-url');
   if (dataTarget) {
-    try {
-      return new URL(dataTarget, document.baseURI).toString();
-    } catch {
-      return null;
+    candidateValues.push(dataTarget);
+  }
+
+  for (const rawCandidate of candidateValues) {
+    const trimmed = rawCandidate.trim();
+    if (!trimmed || seen.has(trimmed)) {
+      continue;
     }
+    seen.add(trimmed);
+    if (trimmed.toLowerCase().startsWith('javascript:')) {
+      continue;
+    }
+    const absolute = tryCreateAbsoluteUrl(trimmed);
+    if (!absolute) {
+      continue;
+    }
+    const sanitized = sanitizeResolvedUrl(absolute);
+    if (sanitized) {
+      return sanitized;
+    }
+    return absolute.href;
   }
 
   return null;

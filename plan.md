@@ -67,14 +67,14 @@
 ## 5. Destination Preview Tooltip (v1.0 milestone)
 
 ### Task 5.1: Tooltip component
-- [ ] Inject isolated tooltip element with scoped CSS to avoid site interference.
-- [ ] Display cleaned destination URL on hover with small delay and accessible styling.
-- [ ] Allow global toggle to disable preview entirely.
+- [x] Inject isolated tooltip element with scoped CSS to avoid site interference.
+- [x] Display cleaned destination URL on hover with small delay and accessible styling.
+- [x] Allow global toggle to disable preview entirely.
 
 ### Task 5.2: URL resolution improvements
-- [ ] Strip tracking parameters and handle redirects when feasible without fetching remote scripts.
-- [ ] Provide fallback to raw `href` when sanitization fails.
-- [ ] Respect privacy expectations (no external requests without consent).
+- [x] Strip tracking parameters and handle redirects when feasible without fetching remote scripts.
+- [x] Provide fallback to raw `href` when sanitization fails.
+- [x] Respect privacy expectations (no external requests without consent).
 
 ## 6. UX & Onboarding Enhancements
 
