@@ -13,7 +13,8 @@ export const STORAGE_KEYS = {
   globalEnabled: 'globalEnabled',
   siteRules: 'siteRules',
   modifierMap: 'modifierMap',
-  previewEnabled: 'previewEnabled'
+  previewEnabled: 'previewEnabled',
+  onboardingComplete: 'onboardingComplete'
 } as const;
 
 export const MESSAGE_TYPES = {

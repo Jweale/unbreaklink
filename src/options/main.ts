@@ -45,6 +45,12 @@ type OptionsState = {
   modifierErrors: string[];
   modifierDirty: boolean;
   modifierBaseline: ModifierMap;
+  onboardingLoading: boolean;
+  onboardingSaving: boolean;
+  onboardingVisible: boolean;
+  onboardingCompleted: boolean;
+  onboardingStep: number;
+  onboardingStatusMessage: string | null;
 };
 
 const ACTION_LABELS: Record<ClickAction, string> = {
@@ -95,6 +101,49 @@ const COMBINATION_CANDIDATES: readonly string[] = (() => {
   return combos;
 })();
 
+type OnboardingStep = {
+  title: string;
+  description: string;
+  bulletPoints?: readonly string[];
+  primaryLabel?: string;
+  route?: Route;
+};
+
+const ONBOARDING_STEPS: readonly OnboardingStep[] = [
+  {
+    title: 'Welcome to UnbreakLink',
+    description:
+      'UnbreakLink automatically removes tracking redirects so you land on the real destination faster.',
+    bulletPoints: [
+      'Keep context by opening cleaner links in new tabs without extra redirects.',
+      'Control how links open with simple modifier shortcuts and per-site rules.'
+    ],
+    route: 'global'
+  },
+  {
+    title: 'Enable fixes where you browse',
+    description:
+      'Use the global toggle here in Options to turn UnbreakLink on everywhere, then flip site access directly from the extension popup.',
+    bulletPoints: [
+      'Global toggle controls whether UnbreakLink intercepts supported links across tabs.',
+      'Open the popup on any site to grant or revoke host permissions instantly.'
+    ],
+    route: 'global'
+  },
+  {
+    title: 'Customize your modifier shortcuts',
+    description:
+      'Pick which key and mouse combinations trigger background tabs, new windows, or simple passthrough.',
+    bulletPoints: [
+      'Add or edit combinations in the Modifier mapping tab.',
+      'Resolve duplicates before saving so each shortcut stays unique.',
+      'Changes sync automatically across all Chrome profiles signed in with sync.'
+    ],
+    primaryLabel: 'Start using UnbreakLink',
+    route: 'modifiers'
+  }
+];
+
 const state: OptionsState = {
   globalEnabled: false,
   globalLoading: true,
@@ -110,7 +159,13 @@ const state: OptionsState = {
   modifierRows: [],
   modifierErrors: [],
   modifierDirty: false,
-  modifierBaseline: { ...DEFAULT_MODIFIER_MAP }
+  modifierBaseline: { ...DEFAULT_MODIFIER_MAP },
+  onboardingLoading: true,
+  onboardingSaving: false,
+  onboardingVisible: false,
+  onboardingCompleted: false,
+  onboardingStep: 0,
+  onboardingStatusMessage: null
 };
 
 const createRowId = () =>
@@ -311,6 +366,29 @@ root.innerHTML = `
       </section>
     </main>
   </div>
+  <div id="onboarding-overlay" class="fixed inset-0 z-40 hidden">
+    <div class="absolute inset-0 bg-base-300/60 backdrop-blur-sm"></div>
+    <div class="relative flex h-full w-full items-center justify-center px-4">
+      <div class="w-full max-w-2xl rounded-3xl border border-base-300/70 bg-base-100/95 p-8 shadow-2xl">
+        <div class="flex flex-col gap-6">
+          <div class="space-y-3">
+            <p id="onboarding-progress" class="text-sm font-medium text-base-content/70"></p>
+            <h2 id="onboarding-title" class="text-3xl font-semibold text-neutral"></h2>
+            <p id="onboarding-description" class="text-base text-base-content/80"></p>
+            <ul id="onboarding-points" class="list-disc space-y-2 pl-5 text-base text-base-content/80"></ul>
+            <p id="onboarding-status" class="text-sm text-error hidden"></p>
+          </div>
+          <div class="flex flex-wrap items-center justify-between gap-3">
+            <button id="onboarding-skip" type="button" class="btn btn-ghost btn-sm text-base-content/80">Skip</button>
+            <div class="flex gap-2">
+              <button id="onboarding-secondary" type="button" class="btn btn-outline btn-sm">Back</button>
+              <button id="onboarding-primary" type="button" class="btn btn-primary btn-sm">Next</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
 `;
 
 const globalToggle = root.querySelector<HTMLInputElement>('#global-toggle');
@@ -327,6 +405,17 @@ const modifierResetButton = root.querySelector<HTMLButtonElement>('#modifier-res
 const modifierSaveButton = root.querySelector<HTMLButtonElement>('#modifier-save');
 const tabLinks = Array.from(root.querySelectorAll<HTMLAnchorElement>('[data-route-tab]'));
 const routeSections = Array.from(root.querySelectorAll<HTMLElement>('[data-route-section]'));
+const onboardingOverlay = root.querySelector<HTMLDivElement>('#onboarding-overlay');
+const onboardingTitle = root.querySelector<HTMLHeadingElement>('#onboarding-title');
+const onboardingDescription = root.querySelector<HTMLParagraphElement>('#onboarding-description');
+const onboardingPoints = root.querySelector<HTMLUListElement>('#onboarding-points');
+const onboardingProgress = root.querySelector<HTMLParagraphElement>('#onboarding-progress');
+const onboardingStatus = root.querySelector<HTMLParagraphElement>('#onboarding-status');
+const onboardingPrimary = root.querySelector<HTMLButtonElement>('#onboarding-primary');
+const onboardingSecondary = root.querySelector<HTMLButtonElement>('#onboarding-secondary');
+const onboardingSkip = root.querySelector<HTMLButtonElement>('#onboarding-skip');
+
+let onboardingRouteApplied: Route | null = null;
 
 if (
   !globalToggle ||
@@ -340,7 +429,16 @@ if (
   !modifierFeedback ||
   !modifierAddButton ||
   !modifierResetButton ||
-  !modifierSaveButton
+  !modifierSaveButton ||
+  !onboardingOverlay ||
+  !onboardingTitle ||
+  !onboardingDescription ||
+  !onboardingPoints ||
+  !onboardingProgress ||
+  !onboardingStatus ||
+  !onboardingPrimary ||
+  !onboardingSecondary ||
+  !onboardingSkip
 ) {
   throw new Error('Options markup failed to render');
 }
@@ -608,6 +706,96 @@ const renderModifiers = () => {
   modifierTableBody.append(fragment);
 };
 
+const renderOnboarding = () => {
+  if (
+    !onboardingOverlay ||
+    !onboardingTitle ||
+    !onboardingDescription ||
+    !onboardingPoints ||
+    !onboardingProgress ||
+    !onboardingPrimary ||
+    !onboardingSecondary ||
+    !onboardingSkip ||
+    !onboardingStatus
+  ) {
+    return;
+  }
+
+  if (state.onboardingLoading) {
+    onboardingOverlay.classList.add('hidden');
+    return;
+  }
+
+  const shouldShow = state.onboardingVisible && !state.onboardingCompleted;
+  onboardingOverlay.classList.toggle('hidden', !shouldShow);
+
+  if (!shouldShow) {
+    onboardingStatus.textContent = '';
+    onboardingStatus.classList.add('hidden');
+    onboardingRouteApplied = null;
+    return;
+  }
+
+  const totalSteps = ONBOARDING_STEPS.length;
+  const maxIndex = totalSteps - 1;
+  const clampedIndex = Math.min(Math.max(state.onboardingStep, 0), maxIndex);
+  if (clampedIndex !== state.onboardingStep) {
+    state.onboardingStep = clampedIndex;
+  }
+
+  const step = ONBOARDING_STEPS[clampedIndex] ?? ONBOARDING_STEPS[0];
+  onboardingTitle.textContent = step.title;
+  onboardingDescription.textContent = step.description;
+  onboardingProgress.textContent = `Step ${clampedIndex + 1} of ${totalSteps}`;
+
+  onboardingPoints.innerHTML = '';
+  if (step.bulletPoints && step.bulletPoints.length) {
+    onboardingPoints.classList.remove('hidden');
+    for (const point of step.bulletPoints) {
+      const item = document.createElement('li');
+      item.textContent = point;
+      onboardingPoints.append(item);
+    }
+  } else {
+    onboardingPoints.classList.add('hidden');
+  }
+
+  if (state.onboardingStatusMessage) {
+    onboardingStatus.textContent = state.onboardingStatusMessage;
+    onboardingStatus.classList.remove('hidden');
+  } else {
+    onboardingStatus.textContent = '';
+    onboardingStatus.classList.add('hidden');
+  }
+
+  const isFinal = clampedIndex === maxIndex;
+  const saving = state.onboardingSaving;
+
+  onboardingPrimary.textContent = saving
+    ? isFinal
+      ? 'Finishing…'
+      : 'Working…'
+    : step.primaryLabel ?? (isFinal ? 'Finish' : 'Next');
+  onboardingPrimary.disabled = saving;
+
+  onboardingSecondary.textContent = 'Back';
+  onboardingSecondary.classList.toggle('hidden', clampedIndex === 0);
+  onboardingSecondary.disabled = saving || clampedIndex === 0;
+
+  onboardingSkip.classList.toggle('hidden', isFinal);
+  onboardingSkip.disabled = saving;
+
+  const route = step.route;
+  if (route && onboardingRouteApplied !== route) {
+    onboardingRouteApplied = route;
+    const targetHash = `#/${route}`;
+    if (window.location.hash.toLowerCase() !== targetHash) {
+      window.location.hash = targetHash;
+    }
+    applyRoute(route);
+  }
+};
+
 const loadGlobalEnabled = async () => {
   state.globalLoading = true;
   state.globalStatusMessage = null;
@@ -666,11 +854,95 @@ const loadModifierMap = async () => {
   }
 };
 
+const loadOnboardingState = async () => {
+  state.onboardingLoading = true;
+  state.onboardingVisible = false;
+  state.onboardingStatusMessage = null;
+  renderOnboarding();
+
+  try {
+    const stored = await chrome.storage.sync.get(STORAGE_KEYS.onboardingComplete);
+    const completed = Boolean(stored[STORAGE_KEYS.onboardingComplete]);
+    state.onboardingCompleted = completed;
+    state.onboardingVisible = !completed;
+    state.onboardingStep = 0;
+  } catch (error) {
+    state.onboardingCompleted = false;
+    state.onboardingVisible = true;
+    state.onboardingStep = 0;
+    state.onboardingStatusMessage = `Failed to load onboarding status: ${(error as Error).message}`;
+  } finally {
+    state.onboardingLoading = false;
+    renderOnboarding();
+  }
+};
+
+const completeOnboarding = async () => {
+  if (state.onboardingSaving) {
+    return;
+  }
+
+  state.onboardingSaving = true;
+  state.onboardingStatusMessage = null;
+  renderOnboarding();
+
+  try {
+    await chrome.storage.sync.set({ [STORAGE_KEYS.onboardingComplete]: true });
+    state.onboardingCompleted = true;
+    state.onboardingVisible = false;
+  } catch (error) {
+    state.onboardingStatusMessage = `Failed to record completion: ${(error as Error).message}`;
+  } finally {
+    state.onboardingSaving = false;
+    renderOnboarding();
+  }
+};
+
 const initialize = async () => {
   renderGlobal();
   renderModifiers();
-  await Promise.all([loadGlobalEnabled(), loadPreviewEnabled(), loadModifierMap()]);
+  renderOnboarding();
+  await Promise.all([
+    loadGlobalEnabled(),
+    loadPreviewEnabled(),
+    loadModifierMap(),
+    loadOnboardingState()
+  ]);
 };
+
+onboardingPrimary.addEventListener('click', async () => {
+  if (state.onboardingSaving) {
+    return;
+  }
+
+  const isFinal = state.onboardingStep >= ONBOARDING_STEPS.length - 1;
+  if (isFinal) {
+    await completeOnboarding();
+    return;
+  }
+
+  state.onboardingStep += 1;
+  state.onboardingStatusMessage = null;
+  renderOnboarding();
+});
+
+onboardingSecondary.addEventListener('click', () => {
+  if (state.onboardingSaving || state.onboardingStep <= 0) {
+    return;
+  }
+
+  state.onboardingStep -= 1;
+  state.onboardingStatusMessage = null;
+  renderOnboarding();
+});
+
+onboardingSkip.addEventListener('click', () => {
+  if (state.onboardingSaving) {
+    return;
+  }
+
+  void completeOnboarding();
+});
 
 globalToggle.addEventListener('change', async () => {
   const targetValue = globalToggle.checked;
@@ -894,6 +1166,16 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
     updateModifierValidation();
     syncModifierDirty();
     renderModifiers();
+  }
+
+  if (STORAGE_KEYS.onboardingComplete in changes) {
+    const entry = changes[STORAGE_KEYS.onboardingComplete];
+    state.onboardingCompleted = Boolean(entry.newValue);
+    state.onboardingVisible = !state.onboardingCompleted;
+    state.onboardingSaving = false;
+    state.onboardingStatusMessage = null;
+    state.onboardingStep = 0;
+    renderOnboarding();
   }
 });
 

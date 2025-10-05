@@ -79,9 +79,9 @@
 ## 6. UX & Onboarding Enhancements
 
 ### Task 6.1: First-run experience
-- [ ] Implement welcome page explaining problem statement and enabling workflow.
-- [ ] Offer quick tutorial for toggling sites and customizing modifiers.
-- [ ] Record completion state to avoid repeat display.
+- [x] Implement welcome page explaining problem statement and enabling workflow.
+- [x] Offer quick tutorial for toggling sites and customizing modifiers.
+- [x] Record completion state to avoid repeat display.
 
 ### Task 6.2: Trust & transparency elements
 - [ ] Surface manifest info, privacy notice, and telemetry opt-in within options.
