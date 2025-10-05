@@ -302,7 +302,24 @@ permissionButton.className = 'primary-button';
 permissionButton.textContent = 'Allow this site';
 
 permissionCallout.append(permissionText, permissionButton);
-siteCard.append(siteCardTitle, siteLine, siteStatusLine, siteToggleButton, permissionCallout);
+const permissionPatternLine = document.createElement('p');
+permissionPatternLine.className = 'status-text';
+permissionPatternLine.hidden = true;
+
+const permissionAssurance = document.createElement('p');
+permissionAssurance.className = 'status-text';
+permissionAssurance.textContent =
+  'UnbreakLink only inspects link destinations on approved pages to remove trackers. No remote code is executed and no browsing data leaves your device.';
+
+siteCard.append(
+  siteCardTitle,
+  siteLine,
+  siteStatusLine,
+  siteToggleButton,
+  permissionCallout,
+  permissionPatternLine,
+  permissionAssurance
+);
 
 container.append(header, globalCard, siteCard);
 app.append(container);
@@ -341,6 +358,14 @@ const renderGlobal = () => {
 };
 
 const renderSite = () => {
+  if (state.originPattern) {
+    permissionPatternLine.hidden = false;
+    permissionPatternLine.textContent = `Host permission applies to: ${state.originPattern}. Access is used only to read link targets on this site.`;
+  } else {
+    permissionPatternLine.hidden = true;
+    permissionPatternLine.textContent = '';
+  }
+
   if (!state.originPattern) {
     siteLine.textContent = 'No compatible site detected';
     siteStatusLine.textContent = 'Open a standard web page to manage permissions.';
@@ -373,7 +398,7 @@ const renderSite = () => {
     siteStatusLine.textContent = 'Allow access to let UnbreakLink fix redirects on this site.';
     siteToggleButton.textContent = 'Enable for this site';
     siteToggleButton.disabled = false;
-    permissionText.textContent = 'Grant host permissions so UnbreakLink can clean up links here.';
+    permissionText.textContent = `Grant host permission for ${state.originPattern} so UnbreakLink can clean up links directly in the page.`;
     permissionCallout.hidden = false;
     return;
   }
@@ -648,7 +673,7 @@ siteToggleButton.addEventListener('click', async () => {
   renderSite();
   if (!disabling && !operationSuccessful && !state.hasPermission) {
     siteStatusLine.textContent = 'Permission request was denied.';
-    permissionText.textContent = 'Chrome blocked the request. Try again to grant host permissions.';
+    permissionText.textContent = `Chrome blocked the request for ${state.originPattern ?? 'this site'}. Try again to grant host permission.`;
     permissionCallout.hidden = false;
   }
 });
@@ -688,7 +713,7 @@ permissionButton.addEventListener('click', async () => {
   renderSite();
   if (!enabled && !state.hasPermission) {
     siteStatusLine.textContent = 'Permission request was denied.';
-    permissionText.textContent = 'Chrome blocked the request. Try again to grant host permissions.';
+    permissionText.textContent = `Chrome blocked the request for ${state.originPattern ?? 'this site'}. Try again to grant host permission.`;
     permissionCallout.hidden = false;
   }
 });

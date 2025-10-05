@@ -13,7 +13,9 @@ export const STORAGE_KEYS = {
   globalEnabled: 'globalEnabled',
   siteRules: 'siteRules',
   modifierMap: 'modifierMap',
-  previewEnabled: 'previewEnabled'
+  previewEnabled: 'previewEnabled',
+  onboardingComplete: 'onboardingComplete',
+  telemetryEnabled: 'telemetryEnabled'
 } as const;
 
 export const MESSAGE_TYPES = {
@@ -25,6 +27,8 @@ export const MESSAGE_TYPES = {
   setGlobalEnabled: 'SET_GLOBAL_ENABLED',
   getPreviewEnabled: 'GET_PREVIEW_ENABLED',
   setPreviewEnabled: 'SET_PREVIEW_ENABLED',
+  getTelemetryEnabled: 'GET_TELEMETRY_ENABLED',
+  setTelemetryEnabled: 'SET_TELEMETRY_ENABLED',
   getSiteRule: 'GET_SITE_RULE',
   setSiteRule: 'SET_SITE_RULE',
   siteRuleUpdated: 'SITE_RULE_UPDATED'

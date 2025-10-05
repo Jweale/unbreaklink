@@ -16,5 +16,5 @@ a {
 
 a:hover,
 a:focus-visible {
-  @apply text-primary-focus;
+  @apply text-primary underline;
 }

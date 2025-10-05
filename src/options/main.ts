@@ -19,7 +19,7 @@ import {
   type ButtonKey
 } from '../shared/modifier';
 
-type Route = 'global' | 'modifiers';
+type Route = 'global' | 'modifiers' | 'trust';
 
 type ModifierRow = {
   id: string;
@@ -45,6 +45,21 @@ type OptionsState = {
   modifierErrors: string[];
   modifierDirty: boolean;
   modifierBaseline: ModifierMap;
+  onboardingLoading: boolean;
+  onboardingSaving: boolean;
+  onboardingVisible: boolean;
+  onboardingCompleted: boolean;
+  onboardingStep: number;
+  onboardingStatusMessage: string | null;
+  telemetryEnabled: boolean;
+  telemetryLoading: boolean;
+  telemetrySaving: boolean;
+  telemetryStatusMessage: string | null;
+  trustManifestName: string;
+  trustManifestVersion: string;
+  trustManifestDescription: string;
+  trustPermissions: string[];
+  trustHostPermissions: string[];
 };
 
 const ACTION_LABELS: Record<ClickAction, string> = {
@@ -95,6 +110,49 @@ const COMBINATION_CANDIDATES: readonly string[] = (() => {
   return combos;
 })();
 
+type OnboardingStep = {
+  title: string;
+  description: string;
+  bulletPoints?: readonly string[];
+  primaryLabel?: string;
+  route?: Route;
+};
+
+const ONBOARDING_STEPS: readonly OnboardingStep[] = [
+  {
+    title: 'Welcome to UnbreakLink',
+    description:
+      'UnbreakLink automatically removes tracking redirects so you land on the real destination faster.',
+    bulletPoints: [
+      'Keep context by opening cleaner links in new tabs without extra redirects.',
+      'Control how links open with simple modifier shortcuts and per-site rules.'
+    ],
+    route: 'global'
+  },
+  {
+    title: 'Enable fixes where you browse',
+    description:
+      'Use the global toggle here in Options to turn UnbreakLink on everywhere, then flip site access directly from the extension popup.',
+    bulletPoints: [
+      'Global toggle controls whether UnbreakLink intercepts supported links across tabs.',
+      'Open the popup on any site to grant or revoke host permissions instantly.'
+    ],
+    route: 'global'
+  },
+  {
+    title: 'Customize your modifier shortcuts',
+    description:
+      'Pick which key and mouse combinations trigger background tabs, new windows, or simple passthrough.',
+    bulletPoints: [
+      'Add or edit combinations in the Modifier mapping tab.',
+      'Resolve duplicates before saving so each shortcut stays unique.',
+      'Changes sync automatically across all Chrome profiles signed in with sync.'
+    ],
+    primaryLabel: 'Start using UnbreakLink',
+    route: 'modifiers'
+  }
+];
+
 const state: OptionsState = {
   globalEnabled: false,
   globalLoading: true,
@@ -110,7 +168,22 @@ const state: OptionsState = {
   modifierRows: [],
   modifierErrors: [],
   modifierDirty: false,
-  modifierBaseline: { ...DEFAULT_MODIFIER_MAP }
+  modifierBaseline: { ...DEFAULT_MODIFIER_MAP },
+  onboardingLoading: true,
+  onboardingSaving: false,
+  onboardingVisible: false,
+  onboardingCompleted: false,
+  onboardingStep: 0,
+  onboardingStatusMessage: null,
+  telemetryEnabled: false,
+  telemetryLoading: true,
+  telemetrySaving: false,
+  telemetryStatusMessage: null,
+  trustManifestName: '',
+  trustManifestVersion: '',
+  trustManifestDescription: '',
+  trustPermissions: [],
+  trustHostPermissions: []
 };
 
 const createRowId = () =>
@@ -216,6 +289,36 @@ const syncModifierDirty = () => {
   state.modifierDirty = hasErrors || !areModifierMapsEqual(state.modifierBaseline, currentMap);
 };
 
+const populateList = (list: HTMLUListElement, values: readonly string[], emptyText: string) => {
+  list.innerHTML = '';
+  if (!values.length) {
+    const item = document.createElement('li');
+    item.textContent = emptyText;
+    item.className = 'text-base-content/60';
+    list.append(item);
+    return;
+  }
+  for (const value of values) {
+    const item = document.createElement('li');
+    item.textContent = value;
+    list.append(item);
+  }
+};
+
+const PERMISSION_LABELS: Record<string, string> = {
+  storage: 'Storage (sync preferences across devices)',
+  tabs: 'Tabs (detect active tab for popup controls)',
+  scripting: 'Scripting (injects local cleanup logic)',
+  activeTab: 'Active tab (run only after you invoke the extension)'
+};
+
+const formatPermissionLabel = (permission: unknown): string => {
+  if (typeof permission !== 'string' || !permission.trim()) {
+    return 'Unknown permission';
+  }
+  return PERMISSION_LABELS[permission] ?? permission;
+};
+
 const root = document.querySelector<HTMLDivElement>('#options-root');
 
 if (!root) {
@@ -242,6 +345,7 @@ root.innerHTML = `
       <nav class="tabs tabs-boxed w-full overflow-x-auto bg-base-100/70">
         <a class="tab flex-1 whitespace-nowrap" data-route-tab="global" href="#/global">Global preferences</a>
         <a class="tab flex-1 whitespace-nowrap" data-route-tab="modifiers" href="#/modifiers">Modifier mapping</a>
+        <a class="tab flex-1 whitespace-nowrap" data-route-tab="trust" href="#/trust">Trust & transparency</a>
       </nav>
       <section data-route-section="global" class="hidden">
         <div class="card bg-base-100/90 shadow-lg">
@@ -309,7 +413,92 @@ root.innerHTML = `
           </div>
         </div>
       </section>
+      <section data-route-section="trust" class="hidden">
+        <div class="space-y-6">
+          <div class="card bg-base-100/90 shadow-lg">
+            <div class="card-body gap-6">
+              <div class="space-y-2">
+                <h2 class="card-title text-2xl">Trust & transparency</h2>
+                <p class="text-sm text-base-content/70">Review what UnbreakLink installs, why permissions are requested, and control optional diagnostics.</p>
+              </div>
+              <div class="grid gap-5 md:grid-cols-2">
+                <div class="rounded-xl border border-base-300/70 bg-base-200/60 p-4">
+                  <p class="text-sm font-semibold uppercase text-base-content/70">Manifest details</p>
+                  <dl class="mt-3 space-y-2 text-sm">
+                    <div>
+                      <dt class="font-medium text-base-content/80">Name</dt>
+                      <dd id="trust-manifest-name" class="text-base-content/70">Loading…</dd>
+                    </div>
+                    <div>
+                      <dt class="font-medium text-base-content/80">Version</dt>
+                      <dd id="trust-manifest-version" class="text-base-content/70">Loading…</dd>
+                    </div>
+                    <div>
+                      <dt class="font-medium text-base-content/80">Description</dt>
+                      <dd id="trust-manifest-description" class="text-base-content/70">Loading…</dd>
+                    </div>
+                  </dl>
+                </div>
+                <div class="rounded-xl border border-base-300/70 bg-base-200/60 p-4">
+                  <p class="text-sm font-semibold uppercase text-base-content/70">Requested permissions</p>
+                  <div class="mt-3 space-y-3 text-sm text-base-content/70">
+                    <div>
+                      <p class="font-medium text-base-content/80">Runtime permissions</p>
+                      <ul id="trust-permissions" class="list-disc space-y-1 pl-5"></ul>
+                    </div>
+                    <div>
+                      <p class="font-medium text-base-content/80">Host access</p>
+                      <ul id="trust-host-permissions" class="list-disc space-y-1 pl-5"></ul>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div class="rounded-xl border border-base-300/70 bg-base-200/60 p-5 space-y-3">
+                <h3 class="text-lg font-semibold text-neutral">Privacy commitments</h3>
+                <p class="text-sm text-base-content/80">All sanitization happens locally within your browser. UnbreakLink never executes remote scripts and never transmits browsing history to external services.</p>
+                <p class="text-sm text-base-content/80">Granting host permissions only allows the extension to read and clean link targets on pages you approve. Network access is limited to destinations you already open.</p>
+              </div>
+              <div class="rounded-xl border border-base-300/70 bg-base-200/60 p-5 space-y-3">
+                <div class="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+                  <div class="space-y-1">
+                    <h3 class="text-lg font-semibold text-neutral">Diagnostic telemetry</h3>
+                    <p id="telemetry-status" class="text-sm text-base-content/70">Loading telemetry preference…</p>
+                  </div>
+                  <label class="flex items-center gap-3">
+                    <span id="telemetry-badge" class="badge badge-outline badge-lg">Loading…</span>
+                    <input id="telemetry-toggle" type="checkbox" class="toggle toggle-primary" />
+                  </label>
+                </div>
+                <p class="text-sm text-base-content/70">When enabled, UnbreakLink records anonymous modifier fallback events to help identify misconfigurations. No URLs or personal data are collected.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
     </main>
+  </div>
+  <div id="onboarding-overlay" class="fixed inset-0 z-40 hidden">
+    <div class="absolute inset-0 bg-base-300/60 backdrop-blur-sm"></div>
+    <div class="relative flex h-full w-full items-center justify-center px-4">
+      <div class="w-full max-w-2xl rounded-3xl border border-base-300/70 bg-base-100/95 p-8 shadow-2xl">
+        <div class="flex flex-col gap-6">
+          <div class="space-y-3">
+            <p id="onboarding-progress" class="text-sm font-medium text-base-content/70"></p>
+            <h2 id="onboarding-title" class="text-3xl font-semibold text-neutral"></h2>
+            <p id="onboarding-description" class="text-base text-base-content/80"></p>
+            <ul id="onboarding-points" class="list-disc space-y-2 pl-5 text-base text-base-content/80"></ul>
+            <p id="onboarding-status" class="text-sm text-error hidden"></p>
+          </div>
+          <div class="flex flex-wrap items-center justify-between gap-3">
+            <button id="onboarding-skip" type="button" class="btn btn-ghost btn-sm text-base-content/80">Skip</button>
+            <div class="flex gap-2">
+              <button id="onboarding-secondary" type="button" class="btn btn-outline btn-sm">Back</button>
+              <button id="onboarding-primary" type="button" class="btn btn-primary btn-sm">Next</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 `;
 
@@ -327,6 +516,25 @@ const modifierResetButton = root.querySelector<HTMLButtonElement>('#modifier-res
 const modifierSaveButton = root.querySelector<HTMLButtonElement>('#modifier-save');
 const tabLinks = Array.from(root.querySelectorAll<HTMLAnchorElement>('[data-route-tab]'));
 const routeSections = Array.from(root.querySelectorAll<HTMLElement>('[data-route-section]'));
+const onboardingOverlay = root.querySelector<HTMLDivElement>('#onboarding-overlay');
+const onboardingTitle = root.querySelector<HTMLHeadingElement>('#onboarding-title');
+const onboardingDescription = root.querySelector<HTMLParagraphElement>('#onboarding-description');
+const onboardingPoints = root.querySelector<HTMLUListElement>('#onboarding-points');
+const onboardingProgress = root.querySelector<HTMLParagraphElement>('#onboarding-progress');
+const onboardingStatus = root.querySelector<HTMLParagraphElement>('#onboarding-status');
+const onboardingPrimary = root.querySelector<HTMLButtonElement>('#onboarding-primary');
+const onboardingSecondary = root.querySelector<HTMLButtonElement>('#onboarding-secondary');
+const onboardingSkip = root.querySelector<HTMLButtonElement>('#onboarding-skip');
+const trustManifestName = root.querySelector<HTMLElement>('#trust-manifest-name');
+const trustManifestVersion = root.querySelector<HTMLElement>('#trust-manifest-version');
+const trustManifestDescription = root.querySelector<HTMLElement>('#trust-manifest-description');
+const trustPermissionsList = root.querySelector<HTMLUListElement>('#trust-permissions');
+const trustHostPermissionsList = root.querySelector<HTMLUListElement>('#trust-host-permissions');
+const telemetryToggle = root.querySelector<HTMLInputElement>('#telemetry-toggle');
+const telemetryStatus = root.querySelector<HTMLParagraphElement>('#telemetry-status');
+const telemetryBadge = root.querySelector<HTMLSpanElement>('#telemetry-badge');
+
+let onboardingRouteApplied: Route | null = null;
 
 if (
   !globalToggle ||
@@ -340,7 +548,24 @@ if (
   !modifierFeedback ||
   !modifierAddButton ||
   !modifierResetButton ||
-  !modifierSaveButton
+  !modifierSaveButton ||
+  !onboardingOverlay ||
+  !onboardingTitle ||
+  !onboardingDescription ||
+  !onboardingPoints ||
+  !onboardingProgress ||
+  !onboardingStatus ||
+  !onboardingPrimary ||
+  !onboardingSecondary ||
+  !onboardingSkip ||
+  !trustManifestName ||
+  !trustManifestVersion ||
+  !trustManifestDescription ||
+  !trustPermissionsList ||
+  !trustHostPermissionsList ||
+  !telemetryToggle ||
+  !telemetryStatus ||
+  !telemetryBadge
 ) {
   throw new Error('Options markup failed to render');
 }
@@ -349,6 +574,9 @@ const getRouteFromHash = (): Route => {
   const hash = window.location.hash.toLowerCase();
   if (hash === '#/modifiers') {
     return 'modifiers';
+  }
+  if (hash === '#/trust') {
+    return 'trust';
   }
   return 'global';
 };
@@ -608,6 +836,155 @@ const renderModifiers = () => {
   modifierTableBody.append(fragment);
 };
 
+const deriveTelemetryStatus = (): string => {
+  if (state.telemetryLoading) {
+    return 'Loading telemetry preference…';
+  }
+  if (state.telemetrySaving) {
+    return 'Saving changes…';
+  }
+  if (state.telemetryStatusMessage) {
+    return state.telemetryStatusMessage;
+  }
+  if (state.telemetryEnabled) {
+    return 'Anonymous diagnostic events are enabled.';
+  }
+  return 'Diagnostics are disabled by default. Enable to help improve modifier guidance.';
+};
+
+const renderTrust = () => {
+  trustManifestName.textContent = state.trustManifestName || 'Unavailable';
+  trustManifestVersion.textContent = state.trustManifestVersion || 'Unavailable';
+  trustManifestDescription.textContent = state.trustManifestDescription || 'No description provided.';
+
+  populateList(
+    trustPermissionsList,
+    state.trustPermissions,
+    'No additional permissions requested beyond platform defaults.'
+  );
+  populateList(
+    trustHostPermissionsList,
+    state.trustHostPermissions,
+    'Host access is granted per site from the popup when you approve it.'
+  );
+
+  telemetryStatus.textContent = deriveTelemetryStatus();
+
+  if (state.telemetryLoading) {
+    telemetryToggle.checked = state.telemetryEnabled;
+    telemetryToggle.disabled = true;
+    telemetryBadge.textContent = 'Loading…';
+    telemetryBadge.className = 'badge badge-outline badge-lg';
+  } else if (state.telemetrySaving) {
+    telemetryToggle.disabled = true;
+    telemetryToggle.checked = state.telemetryEnabled;
+    telemetryBadge.textContent = state.telemetryEnabled ? 'Enabled' : 'Disabled';
+    telemetryBadge.className = state.telemetryEnabled
+      ? 'badge badge-success badge-lg'
+      : 'badge badge-outline badge-lg';
+  } else {
+    telemetryToggle.disabled = false;
+    telemetryToggle.checked = state.telemetryEnabled;
+    if (state.telemetryEnabled) {
+      telemetryBadge.textContent = 'Enabled';
+      telemetryBadge.className = 'badge badge-success badge-lg';
+    } else {
+      telemetryBadge.textContent = 'Disabled';
+      telemetryBadge.className = 'badge badge-outline badge-lg';
+    }
+  }
+};
+
+const renderOnboarding = () => {
+  if (
+    !onboardingOverlay ||
+    !onboardingTitle ||
+    !onboardingDescription ||
+    !onboardingPoints ||
+    !onboardingProgress ||
+    !onboardingPrimary ||
+    !onboardingSecondary ||
+    !onboardingSkip ||
+    !onboardingStatus
+  ) {
+    return;
+  }
+
+  if (state.onboardingLoading) {
+    onboardingOverlay.classList.add('hidden');
+    return;
+  }
+
+  const shouldShow = state.onboardingVisible && !state.onboardingCompleted;
+  onboardingOverlay.classList.toggle('hidden', !shouldShow);
+
+  if (!shouldShow) {
+    onboardingStatus.textContent = '';
+    onboardingStatus.classList.add('hidden');
+    onboardingRouteApplied = null;
+    return;
+  }
+
+  const totalSteps = ONBOARDING_STEPS.length;
+  const maxIndex = totalSteps - 1;
+  const clampedIndex = Math.min(Math.max(state.onboardingStep, 0), maxIndex);
+  if (clampedIndex !== state.onboardingStep) {
+    state.onboardingStep = clampedIndex;
+  }
+
+  const step = ONBOARDING_STEPS[clampedIndex] ?? ONBOARDING_STEPS[0];
+  onboardingTitle.textContent = step.title;
+  onboardingDescription.textContent = step.description;
+  onboardingProgress.textContent = `Step ${clampedIndex + 1} of ${totalSteps}`;
+
+  onboardingPoints.innerHTML = '';
+  if (step.bulletPoints && step.bulletPoints.length) {
+    onboardingPoints.classList.remove('hidden');
+    for (const point of step.bulletPoints) {
+      const item = document.createElement('li');
+      item.textContent = point;
+      onboardingPoints.append(item);
+    }
+  } else {
+    onboardingPoints.classList.add('hidden');
+  }
+
+  if (state.onboardingStatusMessage) {
+    onboardingStatus.textContent = state.onboardingStatusMessage;
+    onboardingStatus.classList.remove('hidden');
+  } else {
+    onboardingStatus.textContent = '';
+    onboardingStatus.classList.add('hidden');
+  }
+
+  const isFinal = clampedIndex === maxIndex;
+  const saving = state.onboardingSaving;
+
+  onboardingPrimary.textContent = saving
+    ? isFinal
+      ? 'Finishing…'
+      : 'Working…'
+    : step.primaryLabel ?? (isFinal ? 'Finish' : 'Next');
+  onboardingPrimary.disabled = saving;
+
+  onboardingSecondary.textContent = 'Back';
+  onboardingSecondary.classList.toggle('hidden', clampedIndex === 0);
+  onboardingSecondary.disabled = saving || clampedIndex === 0;
+
+  onboardingSkip.classList.toggle('hidden', isFinal);
+  onboardingSkip.disabled = saving;
+
+  const route = step.route;
+  if (route && onboardingRouteApplied !== route) {
+    onboardingRouteApplied = route;
+    const targetHash = `#/${route}`;
+    if (window.location.hash.toLowerCase() !== targetHash) {
+      window.location.hash = targetHash;
+    }
+    applyRoute(route);
+  }
+};
+
 const loadGlobalEnabled = async () => {
   state.globalLoading = true;
   state.globalStatusMessage = null;
@@ -666,11 +1043,153 @@ const loadModifierMap = async () => {
   }
 };
 
+const loadManifestDetails = () => {
+  try {
+    if (typeof chrome === 'undefined' || !chrome.runtime?.getManifest) {
+      state.trustManifestName = 'UnbreakLink';
+      state.trustManifestVersion = 'Unknown';
+      state.trustManifestDescription = 'Unable to read manifest in this environment.';
+      state.trustPermissions = [];
+      state.trustHostPermissions = [];
+      renderTrust();
+      return;
+    }
+
+    const manifest = chrome.runtime.getManifest();
+    state.trustManifestName = manifest.name ?? 'UnbreakLink';
+    state.trustManifestVersion = manifest.version ?? 'Unknown';
+    state.trustManifestDescription = manifest.description ?? 'No description provided.';
+
+    const rawPermissions = Array.isArray(manifest.permissions) ? manifest.permissions : [];
+    state.trustPermissions = rawPermissions.map((entry) => formatPermissionLabel(entry));
+
+    const rawHostPermissions = Array.isArray(manifest.host_permissions) ? manifest.host_permissions : [];
+    state.trustHostPermissions = rawHostPermissions.filter(
+      (entry): entry is string => typeof entry === 'string' && Boolean(entry.trim())
+    );
+  } catch (error) {
+    state.trustManifestName = 'Unavailable';
+    state.trustManifestVersion = 'Unavailable';
+    state.trustManifestDescription = `Unable to read manifest: ${(error as Error).message}`;
+    state.trustPermissions = [];
+    state.trustHostPermissions = [];
+  }
+
+  renderTrust();
+};
+
+const loadOnboardingState = async () => {
+  state.onboardingLoading = true;
+  state.onboardingVisible = false;
+  state.onboardingStatusMessage = null;
+  renderOnboarding();
+
+  try {
+    const stored = await chrome.storage.sync.get(STORAGE_KEYS.onboardingComplete);
+    const completed = Boolean(stored[STORAGE_KEYS.onboardingComplete]);
+    state.onboardingCompleted = completed;
+    state.onboardingVisible = !completed;
+    state.onboardingStep = 0;
+  } catch (error) {
+    state.onboardingCompleted = false;
+    state.onboardingVisible = true;
+    state.onboardingStep = 0;
+    state.onboardingStatusMessage = `Failed to load onboarding status: ${(error as Error).message}`;
+  } finally {
+    state.onboardingLoading = false;
+    renderOnboarding();
+  }
+};
+
+const completeOnboarding = async () => {
+  if (state.onboardingSaving) {
+    return;
+  }
+
+  state.onboardingSaving = true;
+  state.onboardingStatusMessage = null;
+  renderOnboarding();
+
+  try {
+    await chrome.storage.sync.set({ [STORAGE_KEYS.onboardingComplete]: true });
+    state.onboardingCompleted = true;
+    state.onboardingVisible = false;
+  } catch (error) {
+    state.onboardingStatusMessage = `Failed to record completion: ${(error as Error).message}`;
+  } finally {
+    state.onboardingSaving = false;
+    renderOnboarding();
+  }
+};
+
+const loadTelemetryEnabled = async () => {
+  state.telemetryLoading = true;
+  state.telemetryStatusMessage = null;
+  renderTrust();
+
+  try {
+    const response = await sendMessage<{ type: string }, { enabled: boolean }>(
+      {
+        type: MESSAGE_TYPES.getTelemetryEnabled
+      }
+    );
+    state.telemetryEnabled = Boolean(response.enabled);
+  } catch (error) {
+    state.telemetryEnabled = false;
+    state.telemetryStatusMessage = `Failed to load telemetry preference: ${(error as Error).message}`;
+  } finally {
+    state.telemetryLoading = false;
+    renderTrust();
+  }
+};
+
 const initialize = async () => {
   renderGlobal();
   renderModifiers();
-  await Promise.all([loadGlobalEnabled(), loadPreviewEnabled(), loadModifierMap()]);
+  renderOnboarding();
+  loadManifestDetails();
+  await Promise.all([
+    loadGlobalEnabled(),
+    loadPreviewEnabled(),
+    loadModifierMap(),
+    loadOnboardingState(),
+    loadTelemetryEnabled()
+  ]);
 };
+
+onboardingPrimary.addEventListener('click', async () => {
+  if (state.onboardingSaving) {
+    return;
+  }
+
+  const isFinal = state.onboardingStep >= ONBOARDING_STEPS.length - 1;
+  if (isFinal) {
+    await completeOnboarding();
+    return;
+  }
+
+  state.onboardingStep += 1;
+  state.onboardingStatusMessage = null;
+  renderOnboarding();
+});
+
+onboardingSecondary.addEventListener('click', () => {
+  if (state.onboardingSaving || state.onboardingStep <= 0) {
+    return;
+  }
+
+  state.onboardingStep -= 1;
+  state.onboardingStatusMessage = null;
+  renderOnboarding();
+});
+
+onboardingSkip.addEventListener('click', () => {
+  if (state.onboardingSaving) {
+    return;
+  }
+
+  void completeOnboarding();
+});
 
 globalToggle.addEventListener('change', async () => {
   const targetValue = globalToggle.checked;
@@ -719,6 +1238,33 @@ previewToggle.addEventListener('change', async () => {
   } finally {
     state.previewSaving = false;
     renderGlobal();
+  }
+});
+
+telemetryToggle.addEventListener('change', async () => {
+  const targetValue = telemetryToggle.checked;
+
+  state.telemetryEnabled = targetValue;
+  state.telemetrySaving = true;
+  state.telemetryStatusMessage = null;
+  renderTrust();
+
+  try {
+    const response = await sendMessage<{ type: string; payload: boolean }, { enabled: boolean }>(
+      {
+        type: MESSAGE_TYPES.setTelemetryEnabled,
+        payload: targetValue
+      }
+    );
+    state.telemetryEnabled = Boolean(response.enabled);
+    state.telemetryStatusMessage = null;
+  } catch (error) {
+    state.telemetryStatusMessage = `Failed to update telemetry preference: ${(error as Error).message}`;
+    state.telemetryEnabled = !targetValue;
+    telemetryToggle.checked = state.telemetryEnabled;
+  } finally {
+    state.telemetrySaving = false;
+    renderTrust();
   }
 });
 
@@ -894,6 +1440,25 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
     updateModifierValidation();
     syncModifierDirty();
     renderModifiers();
+  }
+
+  if (STORAGE_KEYS.onboardingComplete in changes) {
+    const entry = changes[STORAGE_KEYS.onboardingComplete];
+    state.onboardingCompleted = Boolean(entry.newValue);
+    state.onboardingVisible = !state.onboardingCompleted;
+    state.onboardingSaving = false;
+    state.onboardingStatusMessage = null;
+    state.onboardingStep = 0;
+    renderOnboarding();
+  }
+
+  if (STORAGE_KEYS.telemetryEnabled in changes) {
+    const entry = changes[STORAGE_KEYS.telemetryEnabled];
+    state.telemetryEnabled = Boolean(entry.newValue);
+    state.telemetryLoading = false;
+    state.telemetrySaving = false;
+    state.telemetryStatusMessage = null;
+    renderTrust();
   }
 });
 
