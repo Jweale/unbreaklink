@@ -117,6 +117,33 @@ const setPreviewEnabled = async (enabled: boolean) => {
   return { enabled: normalized };
 };
 
+const getTelemetryEnabled = async () => {
+  const stored = await chrome.storage.sync.get(STORAGE_KEYS.telemetryEnabled);
+  return { enabled: Boolean(stored[STORAGE_KEYS.telemetryEnabled]) };
+};
+
+const setTelemetryEnabled = async (enabled: boolean) => {
+  const normalized = Boolean(enabled);
+  await chrome.storage.sync.set({ [STORAGE_KEYS.telemetryEnabled]: normalized });
+  chrome.runtime.sendMessage(
+    {
+      type: MESSAGE_TYPES.setTelemetryEnabled,
+      payload: { enabled: normalized }
+    },
+    () => {
+      const error = chrome.runtime.lastError;
+      if (!error) {
+        return;
+      }
+      const message = error.message ?? '';
+      if (!message.includes('Receiving end does not exist')) {
+        console.warn('UnbreakLink background failed to broadcast telemetry state', error);
+      }
+    }
+  );
+  return { enabled: normalized };
+};
+
 const bootstrap = async () => {
   await loadState();
   state.startups += 1;
@@ -129,6 +156,8 @@ const bootstrap = async () => {
   registerMessageHandler(MESSAGE_TYPES.setGlobalEnabled, setGlobalEnabled);
   registerMessageHandler(MESSAGE_TYPES.getPreviewEnabled, getPreviewEnabled);
   registerMessageHandler(MESSAGE_TYPES.setPreviewEnabled, setPreviewEnabled);
+  registerMessageHandler(MESSAGE_TYPES.getTelemetryEnabled, getTelemetryEnabled);
+  registerMessageHandler(MESSAGE_TYPES.setTelemetryEnabled, setTelemetryEnabled);
   registerMessageHandler(MESSAGE_TYPES.getSiteRule, async (origin: string) => {
     if (typeof origin !== 'string') {
       return { origin: '', enabled: false };

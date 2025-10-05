@@ -19,7 +19,7 @@ import {
   type ButtonKey
 } from '../shared/modifier';
 
-type Route = 'global' | 'modifiers';
+type Route = 'global' | 'modifiers' | 'trust';
 
 type ModifierRow = {
   id: string;
@@ -51,6 +51,15 @@ type OptionsState = {
   onboardingCompleted: boolean;
   onboardingStep: number;
   onboardingStatusMessage: string | null;
+  telemetryEnabled: boolean;
+  telemetryLoading: boolean;
+  telemetrySaving: boolean;
+  telemetryStatusMessage: string | null;
+  trustManifestName: string;
+  trustManifestVersion: string;
+  trustManifestDescription: string;
+  trustPermissions: string[];
+  trustHostPermissions: string[];
 };
 
 const ACTION_LABELS: Record<ClickAction, string> = {
@@ -165,7 +174,16 @@ const state: OptionsState = {
   onboardingVisible: false,
   onboardingCompleted: false,
   onboardingStep: 0,
-  onboardingStatusMessage: null
+  onboardingStatusMessage: null,
+  telemetryEnabled: false,
+  telemetryLoading: true,
+  telemetrySaving: false,
+  telemetryStatusMessage: null,
+  trustManifestName: '',
+  trustManifestVersion: '',
+  trustManifestDescription: '',
+  trustPermissions: [],
+  trustHostPermissions: []
 };
 
 const createRowId = () =>
@@ -271,6 +289,36 @@ const syncModifierDirty = () => {
   state.modifierDirty = hasErrors || !areModifierMapsEqual(state.modifierBaseline, currentMap);
 };
 
+const populateList = (list: HTMLUListElement, values: readonly string[], emptyText: string) => {
+  list.innerHTML = '';
+  if (!values.length) {
+    const item = document.createElement('li');
+    item.textContent = emptyText;
+    item.className = 'text-base-content/60';
+    list.append(item);
+    return;
+  }
+  for (const value of values) {
+    const item = document.createElement('li');
+    item.textContent = value;
+    list.append(item);
+  }
+};
+
+const PERMISSION_LABELS: Record<string, string> = {
+  storage: 'Storage (sync preferences across devices)',
+  tabs: 'Tabs (detect active tab for popup controls)',
+  scripting: 'Scripting (injects local cleanup logic)',
+  activeTab: 'Active tab (run only after you invoke the extension)'
+};
+
+const formatPermissionLabel = (permission: unknown): string => {
+  if (typeof permission !== 'string' || !permission.trim()) {
+    return 'Unknown permission';
+  }
+  return PERMISSION_LABELS[permission] ?? permission;
+};
+
 const root = document.querySelector<HTMLDivElement>('#options-root');
 
 if (!root) {
@@ -297,6 +345,7 @@ root.innerHTML = `
       <nav class="tabs tabs-boxed w-full overflow-x-auto bg-base-100/70">
         <a class="tab flex-1 whitespace-nowrap" data-route-tab="global" href="#/global">Global preferences</a>
         <a class="tab flex-1 whitespace-nowrap" data-route-tab="modifiers" href="#/modifiers">Modifier mapping</a>
+        <a class="tab flex-1 whitespace-nowrap" data-route-tab="trust" href="#/trust">Trust & transparency</a>
       </nav>
       <section data-route-section="global" class="hidden">
         <div class="card bg-base-100/90 shadow-lg">
@@ -364,6 +413,68 @@ root.innerHTML = `
           </div>
         </div>
       </section>
+      <section data-route-section="trust" class="hidden">
+        <div class="space-y-6">
+          <div class="card bg-base-100/90 shadow-lg">
+            <div class="card-body gap-6">
+              <div class="space-y-2">
+                <h2 class="card-title text-2xl">Trust & transparency</h2>
+                <p class="text-sm text-base-content/70">Review what UnbreakLink installs, why permissions are requested, and control optional diagnostics.</p>
+              </div>
+              <div class="grid gap-5 md:grid-cols-2">
+                <div class="rounded-xl border border-base-300/70 bg-base-200/60 p-4">
+                  <p class="text-sm font-semibold uppercase text-base-content/70">Manifest details</p>
+                  <dl class="mt-3 space-y-2 text-sm">
+                    <div>
+                      <dt class="font-medium text-base-content/80">Name</dt>
+                      <dd id="trust-manifest-name" class="text-base-content/70">Loading…</dd>
+                    </div>
+                    <div>
+                      <dt class="font-medium text-base-content/80">Version</dt>
+                      <dd id="trust-manifest-version" class="text-base-content/70">Loading…</dd>
+                    </div>
+                    <div>
+                      <dt class="font-medium text-base-content/80">Description</dt>
+                      <dd id="trust-manifest-description" class="text-base-content/70">Loading…</dd>
+                    </div>
+                  </dl>
+                </div>
+                <div class="rounded-xl border border-base-300/70 bg-base-200/60 p-4">
+                  <p class="text-sm font-semibold uppercase text-base-content/70">Requested permissions</p>
+                  <div class="mt-3 space-y-3 text-sm text-base-content/70">
+                    <div>
+                      <p class="font-medium text-base-content/80">Runtime permissions</p>
+                      <ul id="trust-permissions" class="list-disc space-y-1 pl-5"></ul>
+                    </div>
+                    <div>
+                      <p class="font-medium text-base-content/80">Host access</p>
+                      <ul id="trust-host-permissions" class="list-disc space-y-1 pl-5"></ul>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div class="rounded-xl border border-base-300/70 bg-base-200/60 p-5 space-y-3">
+                <h3 class="text-lg font-semibold text-neutral">Privacy commitments</h3>
+                <p class="text-sm text-base-content/80">All sanitization happens locally within your browser. UnbreakLink never executes remote scripts and never transmits browsing history to external services.</p>
+                <p class="text-sm text-base-content/80">Granting host permissions only allows the extension to read and clean link targets on pages you approve. Network access is limited to destinations you already open.</p>
+              </div>
+              <div class="rounded-xl border border-base-300/70 bg-base-200/60 p-5 space-y-3">
+                <div class="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+                  <div class="space-y-1">
+                    <h3 class="text-lg font-semibold text-neutral">Diagnostic telemetry</h3>
+                    <p id="telemetry-status" class="text-sm text-base-content/70">Loading telemetry preference…</p>
+                  </div>
+                  <label class="flex items-center gap-3">
+                    <span id="telemetry-badge" class="badge badge-outline badge-lg">Loading…</span>
+                    <input id="telemetry-toggle" type="checkbox" class="toggle toggle-primary" />
+                  </label>
+                </div>
+                <p class="text-sm text-base-content/70">When enabled, UnbreakLink records anonymous modifier fallback events to help identify misconfigurations. No URLs or personal data are collected.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
     </main>
   </div>
   <div id="onboarding-overlay" class="fixed inset-0 z-40 hidden">
@@ -414,6 +525,14 @@ const onboardingStatus = root.querySelector<HTMLParagraphElement>('#onboarding-s
 const onboardingPrimary = root.querySelector<HTMLButtonElement>('#onboarding-primary');
 const onboardingSecondary = root.querySelector<HTMLButtonElement>('#onboarding-secondary');
 const onboardingSkip = root.querySelector<HTMLButtonElement>('#onboarding-skip');
+const trustManifestName = root.querySelector<HTMLElement>('#trust-manifest-name');
+const trustManifestVersion = root.querySelector<HTMLElement>('#trust-manifest-version');
+const trustManifestDescription = root.querySelector<HTMLElement>('#trust-manifest-description');
+const trustPermissionsList = root.querySelector<HTMLUListElement>('#trust-permissions');
+const trustHostPermissionsList = root.querySelector<HTMLUListElement>('#trust-host-permissions');
+const telemetryToggle = root.querySelector<HTMLInputElement>('#telemetry-toggle');
+const telemetryStatus = root.querySelector<HTMLParagraphElement>('#telemetry-status');
+const telemetryBadge = root.querySelector<HTMLSpanElement>('#telemetry-badge');
 
 let onboardingRouteApplied: Route | null = null;
 
@@ -438,7 +557,15 @@ if (
   !onboardingStatus ||
   !onboardingPrimary ||
   !onboardingSecondary ||
-  !onboardingSkip
+  !onboardingSkip ||
+  !trustManifestName ||
+  !trustManifestVersion ||
+  !trustManifestDescription ||
+  !trustPermissionsList ||
+  !trustHostPermissionsList ||
+  !telemetryToggle ||
+  !telemetryStatus ||
+  !telemetryBadge
 ) {
   throw new Error('Options markup failed to render');
 }
@@ -447,6 +574,9 @@ const getRouteFromHash = (): Route => {
   const hash = window.location.hash.toLowerCase();
   if (hash === '#/modifiers') {
     return 'modifiers';
+  }
+  if (hash === '#/trust') {
+    return 'trust';
   }
   return 'global';
 };
@@ -706,6 +836,65 @@ const renderModifiers = () => {
   modifierTableBody.append(fragment);
 };
 
+const deriveTelemetryStatus = (): string => {
+  if (state.telemetryLoading) {
+    return 'Loading telemetry preference…';
+  }
+  if (state.telemetrySaving) {
+    return 'Saving changes…';
+  }
+  if (state.telemetryStatusMessage) {
+    return state.telemetryStatusMessage;
+  }
+  if (state.telemetryEnabled) {
+    return 'Anonymous diagnostic events are enabled.';
+  }
+  return 'Diagnostics are disabled by default. Enable to help improve modifier guidance.';
+};
+
+const renderTrust = () => {
+  trustManifestName.textContent = state.trustManifestName || 'Unavailable';
+  trustManifestVersion.textContent = state.trustManifestVersion || 'Unavailable';
+  trustManifestDescription.textContent = state.trustManifestDescription || 'No description provided.';
+
+  populateList(
+    trustPermissionsList,
+    state.trustPermissions,
+    'No additional permissions requested beyond platform defaults.'
+  );
+  populateList(
+    trustHostPermissionsList,
+    state.trustHostPermissions,
+    'Host access is granted per site from the popup when you approve it.'
+  );
+
+  telemetryStatus.textContent = deriveTelemetryStatus();
+
+  if (state.telemetryLoading) {
+    telemetryToggle.checked = state.telemetryEnabled;
+    telemetryToggle.disabled = true;
+    telemetryBadge.textContent = 'Loading…';
+    telemetryBadge.className = 'badge badge-outline badge-lg';
+  } else if (state.telemetrySaving) {
+    telemetryToggle.disabled = true;
+    telemetryToggle.checked = state.telemetryEnabled;
+    telemetryBadge.textContent = state.telemetryEnabled ? 'Enabled' : 'Disabled';
+    telemetryBadge.className = state.telemetryEnabled
+      ? 'badge badge-success badge-lg'
+      : 'badge badge-outline badge-lg';
+  } else {
+    telemetryToggle.disabled = false;
+    telemetryToggle.checked = state.telemetryEnabled;
+    if (state.telemetryEnabled) {
+      telemetryBadge.textContent = 'Enabled';
+      telemetryBadge.className = 'badge badge-success badge-lg';
+    } else {
+      telemetryBadge.textContent = 'Disabled';
+      telemetryBadge.className = 'badge badge-outline badge-lg';
+    }
+  }
+};
+
 const renderOnboarding = () => {
   if (
     !onboardingOverlay ||
@@ -854,6 +1043,41 @@ const loadModifierMap = async () => {
   }
 };
 
+const loadManifestDetails = () => {
+  try {
+    if (typeof chrome === 'undefined' || !chrome.runtime?.getManifest) {
+      state.trustManifestName = 'UnbreakLink';
+      state.trustManifestVersion = 'Unknown';
+      state.trustManifestDescription = 'Unable to read manifest in this environment.';
+      state.trustPermissions = [];
+      state.trustHostPermissions = [];
+      renderTrust();
+      return;
+    }
+
+    const manifest = chrome.runtime.getManifest();
+    state.trustManifestName = manifest.name ?? 'UnbreakLink';
+    state.trustManifestVersion = manifest.version ?? 'Unknown';
+    state.trustManifestDescription = manifest.description ?? 'No description provided.';
+
+    const rawPermissions = Array.isArray(manifest.permissions) ? manifest.permissions : [];
+    state.trustPermissions = rawPermissions.map((entry) => formatPermissionLabel(entry));
+
+    const rawHostPermissions = Array.isArray(manifest.host_permissions) ? manifest.host_permissions : [];
+    state.trustHostPermissions = rawHostPermissions.filter(
+      (entry): entry is string => typeof entry === 'string' && Boolean(entry.trim())
+    );
+  } catch (error) {
+    state.trustManifestName = 'Unavailable';
+    state.trustManifestVersion = 'Unavailable';
+    state.trustManifestDescription = `Unable to read manifest: ${(error as Error).message}`;
+    state.trustPermissions = [];
+    state.trustHostPermissions = [];
+  }
+
+  renderTrust();
+};
+
 const loadOnboardingState = async () => {
   state.onboardingLoading = true;
   state.onboardingVisible = false;
@@ -898,15 +1122,38 @@ const completeOnboarding = async () => {
   }
 };
 
+const loadTelemetryEnabled = async () => {
+  state.telemetryLoading = true;
+  state.telemetryStatusMessage = null;
+  renderTrust();
+
+  try {
+    const response = await sendMessage<{ type: string }, { enabled: boolean }>(
+      {
+        type: MESSAGE_TYPES.getTelemetryEnabled
+      }
+    );
+    state.telemetryEnabled = Boolean(response.enabled);
+  } catch (error) {
+    state.telemetryEnabled = false;
+    state.telemetryStatusMessage = `Failed to load telemetry preference: ${(error as Error).message}`;
+  } finally {
+    state.telemetryLoading = false;
+    renderTrust();
+  }
+};
+
 const initialize = async () => {
   renderGlobal();
   renderModifiers();
   renderOnboarding();
+  loadManifestDetails();
   await Promise.all([
     loadGlobalEnabled(),
     loadPreviewEnabled(),
     loadModifierMap(),
-    loadOnboardingState()
+    loadOnboardingState(),
+    loadTelemetryEnabled()
   ]);
 };
 
@@ -991,6 +1238,33 @@ previewToggle.addEventListener('change', async () => {
   } finally {
     state.previewSaving = false;
     renderGlobal();
+  }
+});
+
+telemetryToggle.addEventListener('change', async () => {
+  const targetValue = telemetryToggle.checked;
+
+  state.telemetryEnabled = targetValue;
+  state.telemetrySaving = true;
+  state.telemetryStatusMessage = null;
+  renderTrust();
+
+  try {
+    const response = await sendMessage<{ type: string; payload: boolean }, { enabled: boolean }>(
+      {
+        type: MESSAGE_TYPES.setTelemetryEnabled,
+        payload: targetValue
+      }
+    );
+    state.telemetryEnabled = Boolean(response.enabled);
+    state.telemetryStatusMessage = null;
+  } catch (error) {
+    state.telemetryStatusMessage = `Failed to update telemetry preference: ${(error as Error).message}`;
+    state.telemetryEnabled = !targetValue;
+    telemetryToggle.checked = state.telemetryEnabled;
+  } finally {
+    state.telemetrySaving = false;
+    renderTrust();
   }
 });
 
@@ -1176,6 +1450,15 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
     state.onboardingStatusMessage = null;
     state.onboardingStep = 0;
     renderOnboarding();
+  }
+
+  if (STORAGE_KEYS.telemetryEnabled in changes) {
+    const entry = changes[STORAGE_KEYS.telemetryEnabled];
+    state.telemetryEnabled = Boolean(entry.newValue);
+    state.telemetryLoading = false;
+    state.telemetrySaving = false;
+    state.telemetryStatusMessage = null;
+    renderTrust();
   }
 });
 

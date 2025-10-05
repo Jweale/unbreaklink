@@ -84,9 +84,9 @@
 - [x] Record completion state to avoid repeat display.
 
 ### Task 6.2: Trust & transparency elements
-- [ ] Surface manifest info, privacy notice, and telemetry opt-in within options.
-- [ ] Provide clear explanations of permissions requested per site.
-- [ ] Ensure no remote code execution paths to maintain trust.
+- [x] Surface manifest info, privacy notice, and telemetry opt-in within options.
+- [x] Provide clear explanations of permissions requested per site.
+- [x] Ensure no remote code execution paths to maintain trust.
 
 ## 7. QA, Release, and Metrics
 
