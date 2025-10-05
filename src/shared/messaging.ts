@@ -1,7 +1,14 @@
+const hasChromeRuntime =
+  typeof chrome !== 'undefined' && !!chrome.runtime && typeof chrome.runtime.sendMessage === 'function';
+
 export const sendMessage = <TRequest extends Record<string, unknown>, TResponse>(
   message: TRequest
 ): Promise<TResponse> =>
   new Promise<TResponse>((resolve, reject) => {
+    if (!hasChromeRuntime) {
+      reject(new Error('Chrome runtime messaging unavailable outside extension context.'));
+      return;
+    }
     try {
       chrome.runtime.sendMessage(message, (response: TResponse) => {
         const error = chrome.runtime.lastError;

@@ -480,7 +480,7 @@ root.innerHTML = `
   <div id="onboarding-overlay" class="fixed inset-0 z-40 hidden">
     <div class="absolute inset-0 bg-base-300/60 backdrop-blur-sm"></div>
     <div class="relative flex h-full w-full items-center justify-center px-4">
-      <div class="w-full max-w-2xl rounded-3xl border border-base-300/70 bg-base-100/95 p-8 shadow-2xl">
+      <div class="w-full max-w-2xl rounded-3xl border border-base-300/70 bg-base-100 p-8 shadow-2xl">
         <div class="flex flex-col gap-6">
           <div class="space-y-3">
             <p id="onboarding-progress" class="text-sm font-medium text-base-content/70"></p>
@@ -535,6 +535,10 @@ const telemetryStatus = root.querySelector<HTMLParagraphElement>('#telemetry-sta
 const telemetryBadge = root.querySelector<HTMLSpanElement>('#telemetry-badge');
 
 let onboardingRouteApplied: Route | null = null;
+
+const hasChromeRuntime =
+  typeof chrome !== 'undefined' && !!chrome.runtime && typeof chrome.runtime.sendMessage === 'function';
+const hasChromeStorage = typeof chrome !== 'undefined' && !!chrome.storage?.sync;
 
 if (
   !globalToggle ||
@@ -869,6 +873,7 @@ const renderTrust = () => {
   );
 
   telemetryStatus.textContent = deriveTelemetryStatus();
+  telemetryStatus.classList.toggle('text-warning', !hasChromeRuntime);
 
   if (state.telemetryLoading) {
     telemetryToggle.checked = state.telemetryEnabled;
@@ -882,6 +887,11 @@ const renderTrust = () => {
     telemetryBadge.className = state.telemetryEnabled
       ? 'badge badge-success badge-lg'
       : 'badge badge-outline badge-lg';
+  } else if (!hasChromeRuntime) {
+    telemetryToggle.disabled = true;
+    telemetryToggle.checked = false;
+    telemetryBadge.textContent = 'Unavailable';
+    telemetryBadge.className = 'badge badge-outline badge-lg';
   } else {
     telemetryToggle.disabled = false;
     telemetryToggle.checked = state.telemetryEnabled;
@@ -986,6 +996,12 @@ const renderOnboarding = () => {
 };
 
 const loadGlobalEnabled = async () => {
+  if (!hasChromeRuntime) {
+    state.globalLoading = false;
+    state.globalStatusMessage = 'Available when UnbreakLink is loaded as a browser extension.';
+    renderGlobal();
+    return;
+  }
   state.globalLoading = true;
   state.globalStatusMessage = null;
   renderGlobal();
@@ -1004,6 +1020,12 @@ const loadGlobalEnabled = async () => {
 };
 
 const loadPreviewEnabled = async () => {
+  if (!hasChromeRuntime) {
+    state.previewLoading = false;
+    state.previewStatusMessage = 'Available when UnbreakLink is loaded as a browser extension.';
+    renderGlobal();
+    return;
+  }
   state.previewLoading = true;
   state.previewStatusMessage = null;
   renderGlobal();
@@ -1022,6 +1044,17 @@ const loadPreviewEnabled = async () => {
 };
 
 const loadModifierMap = async () => {
+  if (!hasChromeStorage) {
+    state.modifierLoading = false;
+    state.modifierBaseline = { ...DEFAULT_MODIFIER_MAP };
+    state.modifierRows = rowsFromMap(DEFAULT_MODIFIER_MAP);
+    state.modifierStatusMessage = 'Modifier mapping is available when UnbreakLink runs as a browser extension.';
+    updateModifierValidation();
+    syncModifierDirty();
+    renderModifiers();
+    return;
+  }
+
   state.modifierLoading = true;
   renderModifiers();
 
@@ -1048,7 +1081,7 @@ const loadManifestDetails = () => {
     if (typeof chrome === 'undefined' || !chrome.runtime?.getManifest) {
       state.trustManifestName = 'UnbreakLink';
       state.trustManifestVersion = 'Unknown';
-      state.trustManifestDescription = 'Unable to read manifest in this environment.';
+      state.trustManifestDescription = 'Load the unpacked extension in Chrome to view full details.';
       state.trustPermissions = [];
       state.trustHostPermissions = [];
       renderTrust();
@@ -1058,7 +1091,9 @@ const loadManifestDetails = () => {
     const manifest = chrome.runtime.getManifest();
     state.trustManifestName = manifest.name ?? 'UnbreakLink';
     state.trustManifestVersion = manifest.version ?? 'Unknown';
-    state.trustManifestDescription = manifest.description ?? 'No description provided.';
+    state.trustManifestDescription = manifest.description?.trim()
+      ? manifest.description
+      : 'No description provided.';
 
     const rawPermissions = Array.isArray(manifest.permissions) ? manifest.permissions : [];
     state.trustPermissions = rawPermissions.map((entry) => formatPermissionLabel(entry));
@@ -1067,10 +1102,10 @@ const loadManifestDetails = () => {
     state.trustHostPermissions = rawHostPermissions.filter(
       (entry): entry is string => typeof entry === 'string' && Boolean(entry.trim())
     );
-  } catch (error) {
+  } catch {
     state.trustManifestName = 'Unavailable';
     state.trustManifestVersion = 'Unavailable';
-    state.trustManifestDescription = `Unable to read manifest: ${(error as Error).message}`;
+    state.trustManifestDescription = 'Manifest metadata is unavailable. Verify the extension is loaded correctly.';
     state.trustPermissions = [];
     state.trustHostPermissions = [];
   }
@@ -1083,6 +1118,14 @@ const loadOnboardingState = async () => {
   state.onboardingVisible = false;
   state.onboardingStatusMessage = null;
   renderOnboarding();
+
+  if (!hasChromeStorage) {
+    state.onboardingCompleted = true;
+    state.onboardingVisible = false;
+    state.onboardingLoading = false;
+    renderOnboarding();
+    return;
+  }
 
   try {
     const stored = await chrome.storage.sync.get(STORAGE_KEYS.onboardingComplete);
@@ -1106,6 +1149,14 @@ const completeOnboarding = async () => {
     return;
   }
 
+  if (!hasChromeStorage) {
+    state.onboardingCompleted = true;
+    state.onboardingVisible = false;
+    state.onboardingSaving = false;
+    renderOnboarding();
+    return;
+  }
+
   state.onboardingSaving = true;
   state.onboardingStatusMessage = null;
   renderOnboarding();
@@ -1126,6 +1177,14 @@ const loadTelemetryEnabled = async () => {
   state.telemetryLoading = true;
   state.telemetryStatusMessage = null;
   renderTrust();
+
+  if (!hasChromeRuntime) {
+    state.telemetryEnabled = false;
+    state.telemetryLoading = false;
+    state.telemetryStatusMessage = 'Available when UnbreakLink is loaded as a browser extension.';
+    renderTrust();
+    return;
+  }
 
   try {
     const response = await sendMessage<{ type: string }, { enabled: boolean }>(
@@ -1242,6 +1301,14 @@ previewToggle.addEventListener('change', async () => {
 });
 
 telemetryToggle.addEventListener('change', async () => {
+  if (!hasChromeRuntime) {
+    telemetryToggle.checked = false;
+    state.telemetryEnabled = false;
+    state.telemetryStatusMessage = 'Telemetry is only available when running the extension in a browser.';
+    renderTrust();
+    return;
+  }
+
   const targetValue = telemetryToggle.checked;
 
   state.telemetryEnabled = targetValue;
@@ -1406,65 +1473,67 @@ window.addEventListener('hashchange', () => {
   applyRoute(route);
 });
 
-chrome.storage.onChanged.addListener((changes, areaName) => {
-  if (areaName !== 'sync') {
-    return;
-  }
-
-  if (STORAGE_KEYS.globalEnabled in changes) {
-    const entry = changes[STORAGE_KEYS.globalEnabled];
-    if (typeof entry.newValue === 'boolean') {
-      state.globalEnabled = entry.newValue;
-      state.globalStatusMessage = null;
-      renderGlobal();
-    }
-  }
-
-  if (STORAGE_KEYS.modifierMap in changes) {
-    if (state.modifierSaving) {
+if (typeof chrome !== 'undefined' && chrome.storage?.onChanged) {
+  chrome.storage.onChanged.addListener((changes, areaName) => {
+    if (areaName !== 'sync') {
       return;
     }
 
-    const entry = changes[STORAGE_KEYS.modifierMap];
-    const normalized = normalizeModifierMap(entry.newValue);
+    if (STORAGE_KEYS.globalEnabled in changes) {
+      const entry = changes[STORAGE_KEYS.globalEnabled];
+      if (typeof entry.newValue === 'boolean') {
+        state.globalEnabled = entry.newValue;
+        state.globalStatusMessage = null;
+        renderGlobal();
+      }
+    }
 
-    if (state.modifierDirty) {
-      state.modifierStatusMessage = 'Mappings changed in another context. Reset to discard your edits.';
+    if (STORAGE_KEYS.modifierMap in changes) {
+      if (state.modifierSaving) {
+        return;
+      }
+
+      const entry = changes[STORAGE_KEYS.modifierMap];
+      const normalized = normalizeModifierMap(entry.newValue);
+
+      if (state.modifierDirty) {
+        state.modifierStatusMessage = 'Mappings changed in another context. Reset to discard your edits.';
+        renderModifiers();
+        return;
+      }
+
+      state.modifierBaseline = { ...normalized };
+      state.modifierRows = rowsFromMap(normalized);
+      state.modifierStatusMessage = 'Mappings refreshed from another context.';
+      updateModifierValidation();
+      syncModifierDirty();
       renderModifiers();
-      return;
     }
 
-    state.modifierBaseline = { ...normalized };
-    state.modifierRows = rowsFromMap(normalized);
-    state.modifierStatusMessage = 'Mappings refreshed from another context.';
-    updateModifierValidation();
-    syncModifierDirty();
-    renderModifiers();
-  }
+    if (STORAGE_KEYS.onboardingComplete in changes) {
+      const entry = changes[STORAGE_KEYS.onboardingComplete];
+      state.onboardingCompleted = Boolean(entry.newValue);
+      state.onboardingVisible = !state.onboardingCompleted;
+      state.onboardingSaving = false;
+      state.onboardingStatusMessage = null;
+      state.onboardingStep = 0;
+      renderOnboarding();
+    }
 
-  if (STORAGE_KEYS.onboardingComplete in changes) {
-    const entry = changes[STORAGE_KEYS.onboardingComplete];
-    state.onboardingCompleted = Boolean(entry.newValue);
-    state.onboardingVisible = !state.onboardingCompleted;
-    state.onboardingSaving = false;
-    state.onboardingStatusMessage = null;
-    state.onboardingStep = 0;
-    renderOnboarding();
-  }
-
-  if (STORAGE_KEYS.telemetryEnabled in changes) {
-    const entry = changes[STORAGE_KEYS.telemetryEnabled];
-    state.telemetryEnabled = Boolean(entry.newValue);
-    state.telemetryLoading = false;
-    state.telemetrySaving = false;
-    state.telemetryStatusMessage = null;
-    renderTrust();
-  }
-});
+    if (STORAGE_KEYS.telemetryEnabled in changes) {
+      const entry = changes[STORAGE_KEYS.telemetryEnabled];
+      state.telemetryEnabled = Boolean(entry.newValue);
+      state.telemetryLoading = false;
+      state.telemetrySaving = false;
+      state.telemetryStatusMessage = null;
+      renderTrust();
+    }
+  });
+}
 
 const initialRoute = getRouteFromHash();
 if (!window.location.hash) {
-  window.location.replace('#/global');
+  window.location.hash = '#/global';
   applyRoute('global');
 } else {
   applyRoute(initialRoute);
