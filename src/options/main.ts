@@ -34,6 +34,10 @@ type OptionsState = {
   globalLoading: boolean;
   globalSaving: boolean;
   globalStatusMessage: string | null;
+  previewEnabled: boolean;
+  previewLoading: boolean;
+  previewSaving: boolean;
+  previewStatusMessage: string | null;
   modifierLoading: boolean;
   modifierSaving: boolean;
   modifierStatusMessage: string | null;
@@ -96,6 +100,10 @@ const state: OptionsState = {
   globalLoading: true,
   globalSaving: false,
   globalStatusMessage: null,
+  previewEnabled: true,
+  previewLoading: true,
+  previewSaving: false,
+  previewStatusMessage: null,
   modifierLoading: true,
   modifierSaving: false,
   modifierStatusMessage: null,
@@ -252,6 +260,16 @@ root.innerHTML = `
                 <input id="global-toggle" type="checkbox" class="toggle toggle-primary" />
               </label>
             </div>
+            <div class="flex flex-col gap-4 rounded-xl border border-base-300/70 bg-base-200/60 p-5 md:flex-row md:items-center md:justify-between">
+              <div class="space-y-1">
+                <p class="font-medium">Destination preview tooltip</p>
+                <p id="preview-status" class="text-sm text-base-content/70">Loading preview preference…</p>
+              </div>
+              <label class="flex items-center gap-3">
+                <span id="preview-badge" class="badge badge-outline badge-lg">Loading…</span>
+                <input id="preview-toggle" type="checkbox" class="toggle toggle-primary" />
+              </label>
+            </div>
             <div class="alert alert-info">
               <span>Changes sync automatically across all windows where UnbreakLink is active.</span>
             </div>
@@ -298,6 +316,9 @@ root.innerHTML = `
 const globalToggle = root.querySelector<HTMLInputElement>('#global-toggle');
 const globalStatus = root.querySelector<HTMLParagraphElement>('#global-status');
 const globalBadge = root.querySelector<HTMLSpanElement>('#global-badge');
+const previewToggle = root.querySelector<HTMLInputElement>('#preview-toggle');
+const previewStatus = root.querySelector<HTMLParagraphElement>('#preview-status');
+const previewBadge = root.querySelector<HTMLSpanElement>('#preview-badge');
 const modifierStatus = root.querySelector<HTMLParagraphElement>('#modifier-status');
 const modifierTableBody = root.querySelector<HTMLTableSectionElement>('#modifier-table-body');
 const modifierFeedback = root.querySelector<HTMLParagraphElement>('#modifier-feedback');
@@ -311,6 +332,9 @@ if (
   !globalToggle ||
   !globalStatus ||
   !globalBadge ||
+  !previewToggle ||
+  !previewStatus ||
+  !previewBadge ||
   !modifierStatus ||
   !modifierTableBody ||
   !modifierFeedback ||
@@ -352,7 +376,7 @@ const applyRoute = (route: Route) => {
 };
 
 const renderGlobal = () => {
-  if (!globalToggle || !globalStatus || !globalBadge) {
+  if (!globalToggle || !globalStatus || !globalBadge || !previewToggle || !previewStatus || !previewBadge) {
     return;
   }
 
@@ -362,36 +386,63 @@ const renderGlobal = () => {
     globalBadge.textContent = 'Loading…';
     globalBadge.className = 'badge badge-outline badge-lg';
     globalStatus.textContent = 'Loading global preference…';
-    return;
-  }
-
-  if (state.globalSaving) {
+  } else if (state.globalSaving) {
     globalToggle.disabled = true;
     globalBadge.textContent = state.globalEnabled ? 'Enabled' : 'Disabled';
     globalBadge.className = state.globalEnabled
       ? 'badge badge-success badge-lg'
       : 'badge badge-outline badge-lg';
     globalStatus.textContent = 'Saving changes…';
-    return;
+  } else {
+    globalToggle.disabled = false;
+    globalToggle.checked = state.globalEnabled;
+    if (state.globalEnabled) {
+      globalBadge.textContent = 'Enabled';
+      globalBadge.className = 'badge badge-success badge-lg';
+    } else {
+      globalBadge.textContent = 'Disabled';
+      globalBadge.className = 'badge badge-outline badge-lg';
+    }
+    if (state.globalStatusMessage) {
+      globalStatus.textContent = state.globalStatusMessage;
+    } else if (state.globalEnabled) {
+      globalStatus.textContent = 'UnbreakLink intercepts supported links across your browser.';
+    } else {
+      globalStatus.textContent = 'UnbreakLink is paused globally. Enable it to restore modifier shortcuts.';
+    }
   }
 
-  globalToggle.disabled = false;
-  globalToggle.checked = state.globalEnabled;
-
-  if (state.globalEnabled) {
-    globalBadge.textContent = 'Enabled';
-    globalBadge.className = 'badge badge-success badge-lg';
+  if (state.previewLoading) {
+    previewToggle.checked = state.previewEnabled;
+    previewToggle.disabled = true;
+    previewBadge.textContent = 'Loading…';
+    previewBadge.className = 'badge badge-outline badge-lg';
+    previewStatus.textContent = 'Loading preview preference…';
+  } else if (state.previewSaving) {
+    previewToggle.disabled = true;
+    previewToggle.checked = state.previewEnabled;
+    previewBadge.textContent = state.previewEnabled ? 'Enabled' : 'Disabled';
+    previewBadge.className = state.previewEnabled
+      ? 'badge badge-success badge-lg'
+      : 'badge badge-outline badge-lg';
+    previewStatus.textContent = 'Saving changes…';
   } else {
-    globalBadge.textContent = 'Disabled';
-    globalBadge.className = 'badge badge-outline badge-lg';
-  }
-
-  if (state.globalStatusMessage) {
-    globalStatus.textContent = state.globalStatusMessage;
-  } else if (state.globalEnabled) {
-    globalStatus.textContent = 'UnbreakLink intercepts supported links across your browser.';
-  } else {
-    globalStatus.textContent = 'UnbreakLink is paused globally. Enable it to restore modifier shortcuts.';
+    previewToggle.disabled = false;
+    previewToggle.checked = state.previewEnabled;
+    if (state.previewEnabled) {
+      previewBadge.textContent = 'Enabled';
+      previewBadge.className = 'badge badge-success badge-lg';
+    } else {
+      previewBadge.textContent = 'Disabled';
+      previewBadge.className = 'badge badge-outline badge-lg';
+    }
+    if (state.previewStatusMessage) {
+      previewStatus.textContent = state.previewStatusMessage;
+    } else if (state.previewEnabled) {
+      previewStatus.textContent = 'Show cleaned destination URLs when hovering supported links.';
+    } else {
+      previewStatus.textContent = 'Tooltip previews are disabled globally.';
+    }
   }
 };
 
@@ -575,6 +626,24 @@ const loadGlobalEnabled = async () => {
   }
 };
 
+const loadPreviewEnabled = async () => {
+  state.previewLoading = true;
+  state.previewStatusMessage = null;
+  renderGlobal();
+
+  try {
+    const response = await sendMessage<{ type: string }, { enabled: boolean | undefined }>({
+      type: MESSAGE_TYPES.getPreviewEnabled
+    });
+    state.previewEnabled = typeof response.enabled === 'boolean' ? response.enabled : true;
+  } catch (error) {
+    state.previewStatusMessage = `Failed to load preview preference: ${(error as Error).message}`;
+  } finally {
+    state.previewLoading = false;
+    renderGlobal();
+  }
+};
+
 const loadModifierMap = async () => {
   state.modifierLoading = true;
   renderModifiers();
@@ -600,7 +669,7 @@ const loadModifierMap = async () => {
 const initialize = async () => {
   renderGlobal();
   renderModifiers();
-  await Promise.all([loadGlobalEnabled(), loadModifierMap()]);
+  await Promise.all([loadGlobalEnabled(), loadPreviewEnabled(), loadModifierMap()]);
 };
 
 globalToggle.addEventListener('change', async () => {
@@ -624,6 +693,31 @@ globalToggle.addEventListener('change', async () => {
     globalToggle.checked = state.globalEnabled;
   } finally {
     state.globalSaving = false;
+    renderGlobal();
+  }
+});
+
+previewToggle.addEventListener('change', async () => {
+  const targetValue = previewToggle.checked;
+
+  state.previewEnabled = targetValue;
+  state.previewSaving = true;
+  state.previewStatusMessage = null;
+  renderGlobal();
+
+  try {
+    const response = await sendMessage<{ type: string; payload: boolean }, { enabled: boolean | undefined }>({
+      type: MESSAGE_TYPES.setPreviewEnabled,
+      payload: targetValue
+    });
+    state.previewEnabled = typeof response.enabled === 'boolean' ? response.enabled : true;
+    state.previewStatusMessage = null;
+  } catch (error) {
+    state.previewStatusMessage = `Failed to update preview preference: ${(error as Error).message}`;
+    state.previewEnabled = !targetValue;
+    previewToggle.checked = state.previewEnabled;
+  } finally {
+    state.previewSaving = false;
     renderGlobal();
   }
 });
