@@ -25,6 +25,12 @@
     "prettier": "^3.3.3",
     "tailwindcss": "^3.4.13",
     "typescript": "^5.6.2",
-    "vite": "^5.4.8"
+    "vite": "^7.1.9"
+  },
+  "overrides": {
+    "@samrum/vite-plugin-web-extension@*": {
+      "vite": "^7.1.9",
+      "content-security-policy-parser": "^0.6.0"
+    }
   }
 }
